@@ -20,10 +20,12 @@ const Source = "claude"
 const clip = 280
 
 // Events lists the hook events snxw subscribes to, in settings order.
+// SessionStart is absent: it accepts only command and mcp_tool hooks, so the
+// first event of a session carries its context instead (see Context).
 var Events = []string{
-	"SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse",
+	"UserPromptSubmit", "PreToolUse", "PostToolUse",
 	"PostToolUseFailure", "Notification", "PermissionRequest", "Stop",
-	"SubagentStart", "SubagentStop", "SessionEnd",
+	"StopFailure", "SubagentStart", "SubagentStop", "SessionEnd",
 }
 
 // Context adds cwd, repo and branch to ev.Body, for the first event of a
@@ -139,6 +141,10 @@ func Translate(raw []byte) (Event, error) {
 	case "Stop":
 		ev.Kind = "turn.end"
 		put("last", in.LastAssistant)
+	case "StopFailure":
+		// The turn ended on an API error (rate limit, overload, auth).
+		ev.Kind = "error"
+		put("error", in.Error)
 	case "SubagentStart":
 		ev.Kind = "subagent.start"
 		put("agent", in.AgentType)

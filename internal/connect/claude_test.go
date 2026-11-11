@@ -130,3 +130,32 @@ func must(b []byte, err error) []byte {
 	}
 	return b
 }
+
+// A file that never had snxw hooks must come out of disconnect byte-for-byte
+// unchanged, with no backup and its mode kept.
+func TestDisconnectLeavesUnrelatedFileAlone(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "settings.json")
+	orig := "{\n    \"zeta\": 1,\n    \"alpha\": {\"n\": 12345678901234567890},\n    \"hooks\": {\"Stop\": [{\"hooks\": [{\"type\": \"command\", \"command\": \"x\"}]}]}\n}\n"
+	os.WriteFile(path, []byte(orig), 0o644)
+	changed, err := DisconnectClaude(path)
+	if err != nil || changed {
+		t.Fatalf("changed=%v err=%v, want no change", changed, err)
+	}
+	if b, _ := os.ReadFile(path); string(b) != orig {
+		t.Fatalf("file rewritten:\n%s", b)
+	}
+	if _, err := os.Stat(path + ".snxw.bak"); err == nil {
+		t.Fatal("backup written for a no-op")
+	}
+}
+
+func TestConnectKeepsBigNumbers(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "settings.json")
+	os.WriteFile(path, []byte(`{"n": 12345678901234567890}`), 0o644)
+	if _, err := ConnectClaude(path, "127.0.0.1:7766", "t"); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(path); !strings.Contains(string(b), "12345678901234567890") {
+		t.Fatalf("number changed:\n%s", b)
+	}
+}

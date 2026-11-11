@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 
 	"github.com/snxwfairies-ai/snxwboard-oss/internal/adapter/claude"
@@ -41,7 +42,7 @@ func ConnectClaude(path, addr, token string) (bool, error) {
 				"hooks": []any{map[string]any{
 					"type":    "http",
 					"url":     "http://" + addr + hookPath,
-					"timeout": 2,
+					"timeout": json.Number("2"),
 					"headers": map[string]any{"Authorization": "Bearer " + token},
 				}},
 			})
@@ -73,12 +74,11 @@ func editClaude(path string, edit func(hooks map[string]any)) (bool, error) {
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return false, fmt.Errorf("read %s: %w", path, err)
 	}
-	settings := map[string]any{}
-	if len(bytes.TrimSpace(before)) > 0 {
-		if err := json.Unmarshal(before, &settings); err != nil {
-			return false, fmt.Errorf("%s is not valid JSON, not touching it: %w", path, err)
-		}
+	settings, err := decodeSettings(path, before)
+	if err != nil {
+		return false, err
 	}
+	original, _ := decodeSettings(path, before) // untouched copy to compare against
 	hooks, _ := settings["hooks"].(map[string]any)
 	if hooks == nil {
 		hooks = map[string]any{}
@@ -90,6 +90,11 @@ func editClaude(path string, edit func(hooks map[string]any)) (bool, error) {
 		settings["hooks"] = hooks
 	}
 
+	// Compare meaning, not bytes: re-encoding reorders keys, so a byte compare
+	// would rewrite a file that needs no change.
+	if reflect.DeepEqual(original, settings) && len(before) > 0 {
+		return false, nil
+	}
 	var buf bytes.Buffer
 	enc := json.NewEncoder(&buf)
 	enc.SetEscapeHTML(false)
@@ -98,9 +103,6 @@ func editClaude(path string, edit func(hooks map[string]any)) (bool, error) {
 		return false, fmt.Errorf("encode settings: %w", err)
 	}
 	after := buf.Bytes()
-	if bytes.Equal(before, after) {
-		return false, nil
-	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return false, fmt.Errorf("create %s: %w", filepath.Dir(path), err)
 	}
@@ -120,6 +122,20 @@ func editClaude(path string, edit func(hooks map[string]any)) (bool, error) {
 		return false, fmt.Errorf("replace %s: %w", path, err)
 	}
 	return true, nil
+}
+
+// decodeSettings parses a settings file, keeping numbers exact.
+func decodeSettings(path string, data []byte) (map[string]any, error) {
+	settings := map[string]any{}
+	if len(bytes.TrimSpace(data)) == 0 {
+		return settings, nil
+	}
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.UseNumber()
+	if err := dec.Decode(&settings); err != nil {
+		return nil, fmt.Errorf("%s is not valid JSON, not touching it: %w", path, err)
+	}
+	return settings, nil
 }
 
 // withoutOurs returns the matcher groups of one event with snxw hooks removed;
