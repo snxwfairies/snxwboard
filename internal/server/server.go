@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/snxwfairies-ai/snxwboard-oss/internal/fold"
 	"github.com/snxwfairies-ai/snxwboard-oss/internal/store"
 )
 
@@ -46,6 +47,7 @@ type Server struct {
 	version string
 	log     *slog.Logger
 	ingest  chan store.Event
+	folder  *fold.Folder
 
 	startOnce       sync.Once
 	stopOnce        sync.Once
@@ -73,6 +75,7 @@ func New(opts Options) *Server {
 		version: opts.Version,
 		log:     opts.Logger,
 		ingest:  make(chan store.Event, opts.IngestCapacity),
+		folder:  fold.New(),
 		closing: make(chan struct{}),
 		done:    make(chan struct{}),
 		subs:    make(map[*subscriber]struct{}),
@@ -85,16 +88,44 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.handleHealth)
 	mux.Handle("POST /v1/events", s.auth(http.HandlerFunc(s.handleEvents)))
+	mux.Handle("GET /v1/sessions", s.auth(http.HandlerFunc(s.handleSessions)))
 	mux.Handle("GET /v1/stream", s.auth(http.HandlerFunc(s.handleStream)))
 	return mux
 }
 
-// Start begins the single writer goroutine.
+// Start loads persisted session state and begins the single writer goroutine.
 func (s *Server) Start() {
 	s.startOnce.Do(func() {
+		s.loadSessions()
 		s.wg.Add(1)
 		go s.writeLoop()
 	})
+}
+
+// loadSessions restores folded state so counts and status survive a restart
+// instead of being rebuilt from the log.
+func (s *Server) loadSessions() {
+	ctx, cancel := context.WithTimeout(context.Background(), writeTimeout)
+	defer cancel()
+
+	rows, err := s.st.LoadSessions(ctx)
+	if err != nil {
+		s.log.Error("load sessions", "err", err)
+		return
+	}
+	if len(rows) == 0 {
+		return
+	}
+	list := make([]fold.Session, 0, len(rows))
+	for _, row := range rows {
+		var sess fold.Session
+		if err := json.Unmarshal(row.Data, &sess); err != nil || sess.ID == "" {
+			s.log.Warn("skip unreadable session", "id", row.ID, "err", err)
+			continue
+		}
+		list = append(list, sess)
+	}
+	s.folder.Load(list)
 }
 
 // Shutdown stops the SSE handlers, drains queued events to disk and exits the

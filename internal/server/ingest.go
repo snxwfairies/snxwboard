@@ -11,6 +11,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/snxwfairies-ai/snxwboard-oss/internal/redact"
 	"github.com/snxwfairies-ai/snxwboard-oss/internal/store"
 )
 
@@ -97,7 +98,7 @@ func parseEvents(data []byte) ([]store.Event, error) {
 		if err := validateEvent(it); err != nil {
 			return nil, fmt.Errorf("event %d: %w", i, err)
 		}
-		body := it.Body
+		body := redact.Redact(it.Body)
 		if len(body) == 0 {
 			body = json.RawMessage("null")
 		}
@@ -173,16 +174,64 @@ func (s *Server) writeLoop() {
 	}
 }
 
-// flush persists a batch in one transaction, then publishes the events that got
-// their seq assigned.
+// flush persists a batch in one transaction, folds it into session state, then
+// publishes the raw events and the per-session patches that changed.
 func (s *Server) flush(batch []store.Event) {
 	ctx, cancel := context.WithTimeout(context.Background(), writeTimeout)
 	defer cancel()
-	if err := s.st.InsertBatch(ctx, batch); err != nil {
+
+	type change struct {
+		id    string
+		patch map[string]any
+		seq   int64
+	}
+	changes := make([]change, 0, 4)
+	index := make(map[string]int, 4)
+
+	err := s.st.WriteBatch(ctx, batch, func(evs []store.Event) []store.SessionRow {
+		for _, ev := range evs {
+			patch, changed := s.folder.Apply(ev)
+			if !changed {
+				continue
+			}
+			id := ev.Session
+			if id == "" {
+				id = ev.Source
+			}
+			if i, seen := index[id]; seen {
+				for k, v := range patch {
+					changes[i].patch[k] = v
+				}
+				changes[i].seq = ev.Seq
+				continue
+			}
+			index[id] = len(changes)
+			changes = append(changes, change{id: id, patch: patch, seq: ev.Seq})
+		}
+
+		rows := make([]store.SessionRow, 0, len(changes))
+		for _, c := range changes {
+			sess, ok := s.folder.Get(c.id)
+			if !ok {
+				continue
+			}
+			data, err := json.Marshal(sess)
+			if err != nil {
+				s.log.Error("marshal session", "id", c.id, "err", err)
+				continue
+			}
+			rows = append(rows, store.SessionRow{ID: c.id, Data: data, UpdatedSeq: c.seq})
+		}
+		return rows
+	})
+	if err != nil {
 		s.log.Error("persist events", "count", len(batch), "err", err)
 		return
 	}
 	for _, ev := range batch {
 		s.publish(ev)
+	}
+	for _, c := range changes {
+		s.publishSession(c.id, c.patch, c.seq)
 	}
 }

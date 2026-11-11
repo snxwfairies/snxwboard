@@ -36,7 +36,29 @@ CREATE TABLE IF NOT EXISTS events (
 	body    BLOB
 );
 CREATE INDEX IF NOT EXISTS events_ts ON events(ts);
+CREATE TABLE IF NOT EXISTS sessions (
+	id          TEXT PRIMARY KEY,
+	data        BLOB    NOT NULL,
+	updated_seq INTEGER NOT NULL DEFAULT 0
+);
 `
+
+// SessionRow is one folded session as persisted: its JSON state and the seq of
+// the last event folded into it.
+type SessionRow struct {
+	ID         string
+	Data       json.RawMessage
+	UpdatedSeq int64
+}
+
+// FoldFunc runs inside the write transaction after Seq assignment and returns
+// the folded sessions to upsert next to the events.
+type FoldFunc func(evs []Event) []SessionRow
+
+// queryer is the subset of *sql.DB and *sql.Tx used by the read helpers.
+type queryer interface {
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+}
 
 // Open opens or creates the event log at path and enables WAL.
 func Open(path string) (*Store, error) {
@@ -58,7 +80,13 @@ func (s *Store) Close() error { return s.db.Close() }
 
 // InsertBatch appends events in one transaction and fills in their Seq fields.
 func (s *Store) InsertBatch(ctx context.Context, evs []Event) error {
-	if len(evs) == 0 {
+	return s.WriteBatch(ctx, evs, nil)
+}
+
+// WriteBatch appends events and upserts the sessions returned by fold in the
+// same transaction, so folded state never runs ahead of the log.
+func (s *Store) WriteBatch(ctx context.Context, evs []Event, fold FoldFunc) error {
+	if len(evs) == 0 && fold == nil {
 		return nil
 	}
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -84,10 +112,79 @@ func (s *Store) InsertBatch(ctx context.Context, evs []Event) error {
 		}
 		evs[i].Seq = seq
 	}
+
+	if fold != nil {
+		for _, row := range fold(evs) {
+			if row.ID == "" {
+				continue
+			}
+			_, err := tx.ExecContext(ctx, `
+				INSERT INTO sessions(id, data, updated_seq) VALUES(?,?,?)
+				ON CONFLICT(id) DO UPDATE SET data=excluded.data, updated_seq=excluded.updated_seq`,
+				row.ID, []byte(row.Data), row.UpdatedSeq)
+			if err != nil {
+				return fmt.Errorf("upsert session %s: %w", row.ID, err)
+			}
+		}
+	}
+
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit: %w", err)
 	}
 	return nil
+}
+
+// LoadSessions returns every persisted session, ordered by id.
+func (s *Store) LoadSessions(ctx context.Context) ([]SessionRow, error) {
+	return querySessions(ctx, s.db)
+}
+
+// SnapshotSessions returns the highest event seq and the folded sessions in one
+// read transaction, so a client can resume from that seq without a gap.
+func (s *Store) SnapshotSessions(ctx context.Context) (int64, []SessionRow, error) {
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return 0, nil, fmt.Errorf("begin: %w", err)
+	}
+	defer tx.Rollback()
+
+	var seq int64
+	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(MAX(seq), 0) FROM events`).Scan(&seq); err != nil {
+		return 0, nil, fmt.Errorf("max seq: %w", err)
+	}
+	rows, err := querySessions(ctx, tx)
+	if err != nil {
+		return 0, nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, nil, fmt.Errorf("commit: %w", err)
+	}
+	return seq, rows, nil
+}
+
+func querySessions(ctx context.Context, q queryer) ([]SessionRow, error) {
+	rows, err := q.QueryContext(ctx, `SELECT id, data, updated_seq FROM sessions ORDER BY id`)
+	if err != nil {
+		return nil, fmt.Errorf("query sessions: %w", err)
+	}
+	defer rows.Close()
+
+	var out []SessionRow
+	for rows.Next() {
+		var (
+			row  SessionRow
+			data []byte
+		)
+		if err := rows.Scan(&row.ID, &data, &row.UpdatedSeq); err != nil {
+			return nil, fmt.Errorf("scan session: %w", err)
+		}
+		row.Data = json.RawMessage(data)
+		out = append(out, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("session rows: %w", err)
+	}
+	return out, nil
 }
 
 // QueryAfter returns up to limit events with Seq > after, oldest first.

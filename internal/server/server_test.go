@@ -313,8 +313,9 @@ func TestShutdownEndsStream(t *testing.T) {
 
 // sseMsg is one parsed SSE message.
 type sseMsg struct {
-	id   string
-	data string
+	id    string
+	event string
+	data  string
 }
 
 type sseReader struct {
@@ -341,6 +342,8 @@ func newSSEReader(r io.Reader) *sseReader {
 				flush()
 			case strings.HasPrefix(line, "id: "):
 				m.id = strings.TrimPrefix(line, "id: ")
+			case strings.HasPrefix(line, "event: "):
+				m.event = strings.TrimPrefix(line, "event: ")
 			case strings.HasPrefix(line, "data: "):
 				m.data = strings.TrimPrefix(line, "data: ")
 			}
@@ -363,7 +366,7 @@ func (r *sseReader) next(t *testing.T) sseMsg {
 	return sseMsg{}
 }
 
-func (m sseMsg) event(t *testing.T) store.Event {
+func (m sseMsg) asEvent(t *testing.T) store.Event {
 	t.Helper()
 	var ev store.Event
 	if err := json.Unmarshal([]byte(m.data), &ev); err != nil {
@@ -430,7 +433,7 @@ func TestStreamLive(t *testing.T) {
 	if msg.id != "1" {
 		t.Fatalf("id = %q, want 1", msg.id)
 	}
-	ev := msg.event(t)
+	ev := msg.asEvent(t)
 	if ev.Kind != "live" || ev.Session != "s1" || ev.Seq != 1 {
 		t.Fatalf("event = %+v", ev)
 	}
@@ -479,7 +482,7 @@ func TestStreamResume(t *testing.T) {
 			if msg.id != "6" {
 				t.Fatalf("live id = %q, want 6", msg.id)
 			}
-			if ev := msg.event(t); ev.Kind != "e6" {
+			if ev := msg.asEvent(t); ev.Kind != "e6" {
 				t.Fatalf("live event = %+v", ev)
 			}
 		})
