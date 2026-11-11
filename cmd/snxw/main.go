@@ -30,6 +30,10 @@ usage:
   snxw up                  run the daemon in the foreground
   snxw status              print daemon health
   snxw emit <kind> [json]  post an event to the daemon
+  snxw connect claude [--project DIR]
+                           add snxw hooks to Claude Code settings
+  snxw disconnect claude [--project DIR]
+                           remove them again
   snxw version             print the version
 `
 
@@ -52,6 +56,10 @@ func run(args []string) error {
 		return runStatus()
 	case "emit":
 		return runEmit(args[1:])
+	case "connect":
+		return runConnect(args[1:], true)
+	case "disconnect":
+		return runConnect(args[1:], false)
 	case "version", "--version", "-v":
 		fmt.Println(version)
 		return nil

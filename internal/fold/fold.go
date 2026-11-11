@@ -116,13 +116,17 @@ func (f *Folder) Apply(ev store.Event) (map[string]any, bool) {
 	}
 
 	b := parseBody(ev.Body)
+	// Context fields may ride on any event: adapters attach them to the first
+	// event they see when the agent never sent a session start.
+	setField(p, "repo", &s.Repo, field(b, "repo"))
+	setField(p, "cwd", &s.Cwd, field(b, "cwd"))
+	setField(p, "branch", &s.Branch, field(b, "branch"))
+	setField(p, "model", &s.Model, field(b, "model"))
+	if ev.Kind == KindSessionStart {
+		setField(p, "title", &s.Title, field(b, "title"))
+	}
 	switch ev.Kind {
 	case KindSessionStart:
-		setField(p, "repo", &s.Repo, field(b, "repo"))
-		setField(p, "cwd", &s.Cwd, field(b, "cwd"))
-		setField(p, "branch", &s.Branch, field(b, "branch"))
-		setField(p, "model", &s.Model, field(b, "model"))
-		setField(p, "title", &s.Title, field(b, "title"))
 		setStatus(p, s, StatusRunning)
 	case KindToolStart:
 		setField(p, "tool", &s.Tool, field(b, "tool"))

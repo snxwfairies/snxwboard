@@ -88,6 +88,7 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.handleHealth)
 	mux.Handle("POST /v1/events", s.auth(http.HandlerFunc(s.handleEvents)))
+	mux.Handle("POST /v1/hooks/claude", s.auth(http.HandlerFunc(s.handleClaudeHook)))
 	mux.Handle("GET /v1/sessions", s.auth(http.HandlerFunc(s.handleSessions)))
 	mux.Handle("GET /v1/stream", s.auth(http.HandlerFunc(s.handleStream)))
 	return mux
