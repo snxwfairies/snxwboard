@@ -159,3 +159,37 @@ func TestConnectKeepsBigNumbers(t *testing.T) {
 		t.Fatalf("number changed:\n%s", b)
 	}
 }
+
+func TestDisconnectWithoutSettingsCreatesNothing(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "settings.json")
+	changed, err := DisconnectClaude(path)
+	if err != nil || changed {
+		t.Fatalf("changed=%v err=%v", changed, err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatal("disconnect created a settings file")
+	}
+}
+
+func TestNullSettingsFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "settings.json")
+	os.WriteFile(path, []byte("null"), 0o644)
+	if _, err := ConnectClaude(path, "127.0.0.1:7766", "t"); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(must(os.ReadFile(path))), "/v1/hooks/claude") {
+		t.Fatal("hooks not added")
+	}
+}
+
+// The backup is the file before snxw ever touched it, not the previous run.
+func TestBackupKeepsTheOriginal(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "settings.json")
+	orig := `{"model":"x"}`
+	os.WriteFile(path, []byte(orig), 0o644)
+	ConnectClaude(path, "127.0.0.1:7766", "t1")
+	ConnectClaude(path, "127.0.0.1:7766", "t2")
+	if b := string(must(os.ReadFile(path + ".snxw.bak"))); b != orig {
+		t.Fatalf("backup = %s, want the original %s", b, orig)
+	}
+}

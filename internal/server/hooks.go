@@ -12,13 +12,22 @@ import (
 	"github.com/snxwfairies-ai/snxwboard-oss/internal/store"
 )
 
+const hookBodyBytes = 32 << 20
+
 // handleClaudeHook takes a raw Claude Code HTTP-hook payload. It always answers
 // 204 with an empty body, which Claude Code reads as "no decision", so the
 // board can never block, slow or steer the agent. Problems are logged instead.
 func (s *Server) handleClaudeHook(w http.ResponseWriter, r *http.Request) {
 	defer w.WriteHeader(http.StatusNoContent)
 
-	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
+	if !s.authorized(r) {
+		// Usually a token regenerated after `snxw connect`: say how to fix it.
+		s.log.Warn("claude hook: bad or missing token; re-run `snxw connect claude`")
+		return
+	}
+	// Tool inputs and responses can be large (a Write of a whole file); the
+	// adapter keeps a few clipped fields, but it must parse the payload whole.
+	r.Body = http.MaxBytesReader(w, r.Body, hookBodyBytes)
 	data, err := io.ReadAll(r.Body)
 	if err != nil {
 		s.log.Warn("claude hook: read body", "err", err)

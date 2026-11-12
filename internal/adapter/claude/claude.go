@@ -142,9 +142,11 @@ func Translate(raw []byte) (Event, error) {
 		ev.Kind = "turn.end"
 		put("last", in.LastAssistant)
 	case "StopFailure":
-		// The turn ended on an API error (rate limit, overload, auth).
-		ev.Kind = "error"
+		// The turn ended on an API error (rate limit, overload, auth): the
+		// session is idle again, with one more error.
+		ev.Kind = "turn.end"
 		put("error", in.Error)
+		ev.Body["ok"] = false
 	case "SubagentStart":
 		ev.Kind = "subagent.start"
 		put("agent", in.AgentType)

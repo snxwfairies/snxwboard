@@ -92,7 +92,7 @@ func editClaude(path string, edit func(hooks map[string]any)) (bool, error) {
 
 	// Compare meaning, not bytes: re-encoding reorders keys, so a byte compare
 	// would rewrite a file that needs no change.
-	if reflect.DeepEqual(original, settings) && len(before) > 0 {
+	if reflect.DeepEqual(original, settings) {
 		return false, nil
 	}
 	var buf bytes.Buffer
@@ -106,7 +106,9 @@ func editClaude(path string, edit func(hooks map[string]any)) (bool, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return false, fmt.Errorf("create %s: %w", filepath.Dir(path), err)
 	}
-	if len(before) > 0 {
+	// Keep the file as it was before snxw ever touched it: write the backup
+	// once, never over an earlier one.
+	if _, err := os.Stat(path + ".snxw.bak"); len(before) > 0 && errors.Is(err, os.ErrNotExist) {
 		if err := os.WriteFile(path+".snxw.bak", before, 0o600); err != nil {
 			return false, fmt.Errorf("write backup: %w", err)
 		}
@@ -134,6 +136,9 @@ func decodeSettings(path string, data []byte) (map[string]any, error) {
 	dec.UseNumber()
 	if err := dec.Decode(&settings); err != nil {
 		return nil, fmt.Errorf("%s is not valid JSON, not touching it: %w", path, err)
+	}
+	if settings == nil { // the file holds `null`
+		settings = map[string]any{}
 	}
 	return settings, nil
 }
