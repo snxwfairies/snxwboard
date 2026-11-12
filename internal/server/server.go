@@ -18,6 +18,7 @@ import (
 
 	"github.com/snxwfairies-ai/snxwboard-oss/internal/fold"
 	"github.com/snxwfairies-ai/snxwboard-oss/internal/store"
+	"github.com/snxwfairies-ai/snxwboard-oss/internal/web"
 )
 
 const (
@@ -91,6 +92,8 @@ func (s *Server) Handler() http.Handler {
 	// Not wrapped in auth: the hook checks the token itself so that even a
 	// stale token gets the empty 204 Claude Code expects.
 	mux.HandleFunc("POST /v1/hooks/claude", s.handleClaudeHook)
+	mux.Handle("GET /v1/events", s.auth(http.HandlerFunc(s.handleHistory)))
+	mux.Handle("GET /", web.Handler())
 	mux.Handle("GET /v1/sessions", s.auth(http.HandlerFunc(s.handleSessions)))
 	mux.Handle("GET /v1/stream", s.auth(http.HandlerFunc(s.handleStream)))
 	return mux

@@ -31,8 +31,11 @@ into per-session state, and streams small deltas to the UIs (web, TUI, CLI) and 
 - **Why Go:** small resident memory for an always-on daemon, fast cold start for the CLI and for the
   command-hook fallback, and trivial cross-compilation. Claude Code (HTTP hooks) and Codex (MCP tool hooks)
   never spawn our process per event, so spawn time only matters for that fallback.
-- **Web UI:** Preact + signals, no UI framework runtime beyond that, bundled with esbuild. It renders the state the
-  daemon already folded, so the client does no data joining.
+- **Web UI:** three static files (HTML, CSS, plain JS) embedded in the binary with `go:embed`: no framework, no
+  build step, 9 KB gzipped. It renders the state the daemon already folded, so the client does no data joining. It
+  reads the stream with `fetch` rather than `EventSource`, so the token travels in the `Authorization` header and
+  never in a URL or cookie; `snxw open` passes it in the URL fragment, which never reaches the server. Agent output
+  is inserted as text nodes only, under a `default-src 'none'; script-src 'self'` CSP.
 
 ## Data model
 

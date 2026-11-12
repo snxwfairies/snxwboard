@@ -117,10 +117,16 @@ func parseEvents(data []byte) ([]store.Event, error) {
 		if len(body) == 0 {
 			body = json.RawMessage("null")
 		}
+		// An event without a session belongs to its source's session: the fold
+		// keys it that way, so the log must too, or its history is unreachable.
+		session := it.Session
+		if session == "" {
+			session = it.Source
+		}
 		evs[i] = store.Event{
 			TS:      now,
 			Source:  it.Source,
-			Session: it.Session,
+			Session: session,
 			Kind:    it.Kind,
 			Body:    body,
 		}

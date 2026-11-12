@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS events (
 	body    BLOB
 );
 CREATE INDEX IF NOT EXISTS events_ts ON events(ts);
+CREATE INDEX IF NOT EXISTS events_session ON events(session, seq);
 CREATE TABLE IF NOT EXISTS sessions (
 	id          TEXT PRIMARY KEY,
 	data        BLOB    NOT NULL,
@@ -187,6 +188,34 @@ func querySessions(ctx context.Context, q queryer) ([]SessionRow, error) {
 	return out, nil
 }
 
+// QuerySession returns up to limit events of one session. With after > 0 it
+// returns the events after that seq, oldest first; otherwise the newest events
+// before the seq before (0 = no bound), newest first.
+func (s *Store) QuerySession(ctx context.Context, session string, after, before int64, limit int) ([]Event, error) {
+	var (
+		rows *sql.Rows
+		err  error
+	)
+	switch {
+	case after > 0:
+		rows, err = s.db.QueryContext(ctx,
+			`SELECT seq, ts, source, session, kind, body FROM events WHERE session = ? AND seq > ? ORDER BY seq LIMIT ?`,
+			session, after, limit)
+	case before > 0:
+		rows, err = s.db.QueryContext(ctx,
+			`SELECT seq, ts, source, session, kind, body FROM events WHERE session = ? AND seq < ? ORDER BY seq DESC LIMIT ?`,
+			session, before, limit)
+	default:
+		rows, err = s.db.QueryContext(ctx,
+			`SELECT seq, ts, source, session, kind, body FROM events WHERE session = ? ORDER BY seq DESC LIMIT ?`,
+			session, limit)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("query session: %w", err)
+	}
+	return scanEvents(rows)
+}
+
 // QueryAfter returns up to limit events with Seq > after, oldest first.
 func (s *Store) QueryAfter(ctx context.Context, after int64, limit int) ([]Event, error) {
 	rows, err := s.db.QueryContext(ctx,
@@ -195,6 +224,10 @@ func (s *Store) QueryAfter(ctx context.Context, after int64, limit int) ([]Event
 	if err != nil {
 		return nil, fmt.Errorf("query: %w", err)
 	}
+	return scanEvents(rows)
+}
+
+func scanEvents(rows *sql.Rows) ([]Event, error) {
 	defer rows.Close()
 
 	var out []Event

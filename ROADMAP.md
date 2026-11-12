@@ -11,7 +11,8 @@ Each step is one small PR with tests and, where it applies, a benchmark against 
 3. Fold engine: session state machine, coalesced 4 Hz deltas, `waiting_for_you` detection, secret redaction.
 4. Claude Code adapter + `snxw connect claude` (merges HTTP hooks into settings without clobbering existing ones,
    with a backup and `snxw disconnect claude`).
-5. Web UI: session grid, session detail timeline, `⌘K`, `j`/`k`, desktop notifications.
+5. Web UI: sessions grouped by status ("needs you" first), detail timeline with history paging, `j`/`k`/`w`/`/`,
+   desktop notifications. Done in PR #4; a `⌘K` command palette moves to Phase 2.
 6. Codex adapter (MCP tool hooks) + `snxw connect codex`.
 7. OpenCode adapter (`/event` SSE) + `snxw connect opencode`.
 8. MCP server: `list_sessions`, `get_session`, `whats_running`, `notify_me`.

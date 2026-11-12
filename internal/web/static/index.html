@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>snxw</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%23111'/%3E%3Ccircle cx='8' cy='8' r='4' fill='%233fb950'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="app.css">
+<script src="app.js" defer></script>
+</head>
+<body>
+<header class="bar">
+  <span class="brand">snxw</span>
+  <span id="summary" class="summary"></span>
+  <input id="filter" class="filter" type="search" placeholder="filter  /" autocomplete="off" spellcheck="false" aria-label="Filter sessions">
+  <span id="conn" class="conn" title="connection to the daemon"></span>
+  <button id="notify" class="ghost" type="button" title="desktop notifications when an agent needs you (n)">notify: off</button>
+  <button id="helpbtn" class="ghost" type="button" title="keyboard shortcuts (?)">?</button>
+</header>
+
+<main class="main">
+  <nav id="list" class="list" aria-label="Sessions"></nav>
+  <section id="detail" class="detail" aria-live="polite"></section>
+</main>
+
+<div id="gate" class="overlay" hidden>
+  <form id="gateform" class="card">
+    <h1>Connect to snxw</h1>
+    <p>Run <code>snxw open</code> to open this page signed in, or paste the token from <code>snxw token</code>.</p>
+    <input id="tokeninput" type="password" autocomplete="off" placeholder="token" aria-label="Token">
+    <button type="submit">Connect</button>
+    <p id="gateerr" class="err"></p>
+  </form>
+</div>
+
+<div id="help" class="overlay" hidden>
+  <div class="card">
+    <h1>Keys</h1>
+    <dl class="keys">
+      <dt>j / k</dt><dd>next / previous session</dd>
+      <dt>g / G</dt><dd>first / last</dd>
+      <dt>w</dt><dd>next session waiting for you</dd>
+      <dt>/</dt><dd>filter by repo, branch, tool, status</dd>
+      <dt>h</dt><dd>hide or show finished sessions</dd>
+      <dt>y</dt><dd>copy the selected session's cwd</dd>
+      <dt>n</dt><dd>desktop notifications</dd>
+      <dt>esc</dt><dd>clear filter, close this</dd>
+    </dl>
+  </div>
+</div>
+</body>
+</html>

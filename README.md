@@ -21,7 +21,8 @@ which PR it opened, whether CI passed, how long it took, and a ping the moment o
 
 ```sh
 go install github.com/snxwfairies-ai/snxwboard-oss/cmd/snxw@latest   # or a release binary
-snxw up                                             # daemon on 127.0.0.1:7766, opens the board
+snxw up                                             # daemon on 127.0.0.1:7766
+snxw open                                           # the board in your browser, signed in
 snxw connect claude                                 # adds the HTTP hooks to ~/.claude/settings.json
 snxw connect codex                                  # adds MCP-tool hooks to ~/.codex/config.toml
 snxw connect opencode                               # subscribes to `opencode serve` events
