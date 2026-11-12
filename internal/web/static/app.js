@@ -334,64 +334,78 @@ function eventRow(ev) {
 }
 
 // ---- history -----------------------------------------------------------
+//
+// One hist object per selected session. Newer events (refresh) and older
+// pages (loadOlder) have separate in-flight flags because they never overlap
+// in range; a refresh asked for while one is running is remembered in
+// h.again and run when it finishes, so no patch is ever lost. A failed
+// request just leaves the flags clear: the next patch or snapshot retries.
 
-async function loadHistory(id) {
-  state.hist = { id, events: [], last: 0, first: 0, more: false, busy: true };
-  const res = await api("/v1/events?session=" + encodeURIComponent(id) + "&limit=" + PAGE).catch(() => null);
-  if (!res || !res.ok || !state.hist || state.hist.id !== id) return;
-  const evs = ((await res.json()).events || []).reverse();
-  Object.assign(state.hist, {
-    events: evs,
-    last: evs.length ? evs[evs.length - 1].seq : 0,
-    first: evs.length ? evs[0].seq : 0,
-    more: evs.length === PAGE,
-    busy: false,
-  });
-  $("detail").scrollTop = 1e9;
-  render();
-  refreshHistory(); // catch anything that landed while loading
+function newHist(id) {
+  return { id, events: [], last: 0, first: 0, more: false, busy: false, again: false, olderBusy: false };
 }
 
-// refreshHistory appends events newer than the last one shown. Coalesced: at
-// most one request in flight, and one more queued behind it.
-let again = false;
+function loadHistory(id) {
+  state.hist = newHist(id);
+  refreshHistory();
+}
+
+async function getEvents(h, query) {
+  try {
+    const res = await api("/v1/events?session=" + encodeURIComponent(h.id) + query);
+    if (!res.ok) return null;
+    return (await res.json()).events || [];
+  } catch {
+    return null;
+  }
+}
+
 async function refreshHistory() {
   const h = state.hist;
   if (!h || h.id !== state.selected) return;
-  if (h.busy) { again = true; return; }
+  if (h.busy) { h.again = true; return; }
   h.busy = true;
-  const url = "/v1/events?session=" + encodeURIComponent(h.id) + "&limit=1000" + (h.last ? "&after=" + h.last : "");
-  const res = await api(url).catch(() => null);
-  h.busy = false;
-  if (res && res.ok && state.hist === h) {
-    let evs = (await res.json()).events || [];
-    if (!h.last) evs = evs.reverse(); // the unbounded form is newest first
+  try {
+    const first = !h.last;
+    // First load: the newest page, newest first. Afterwards: everything newer.
+    const evs = await getEvents(h, first ? "&limit=" + PAGE : "&after=" + h.last + "&limit=1000");
+    if (!evs || state.hist !== h) return;
+    if (first) {
+      evs.reverse();
+      h.more = evs.length === PAGE;
+    }
     const fresh = evs.filter((e) => e.seq > h.last);
     if (fresh.length) {
       h.events.push(...fresh);
       h.last = fresh[fresh.length - 1].seq;
       if (!h.first) h.first = fresh[0].seq;
+      if (first) $("detail").scrollTop = 1e9;
       render();
     }
+  } finally {
+    h.busy = false;
+    if (h.again && state.hist === h) { h.again = false; refreshHistory(); }
   }
-  if (again) { again = false; refreshHistory(); }
 }
 
 async function loadOlder() {
   const h = state.hist;
-  if (!h || !h.first || h.busy) return;
-  h.busy = true;
-  const d = $("detail");
-  const fromBottom = d.scrollHeight - d.scrollTop;
-  const res = await api("/v1/events?session=" + encodeURIComponent(h.id) + "&before=" + h.first + "&limit=" + PAGE).catch(() => null);
-  h.busy = false;
-  if (!res || !res.ok || state.hist !== h) return;
-  const evs = ((await res.json()).events || []).reverse();
-  h.events.unshift(...evs);
-  if (evs.length) h.first = evs[0].seq;
-  h.more = evs.length === PAGE;
-  draw();
-  d.scrollTop = d.scrollHeight - fromBottom; // keep the reader's place
+  if (!h || !h.first || h.olderBusy) return;
+  h.olderBusy = true;
+  try {
+    const d = $("detail");
+    const evs = await getEvents(h, "&before=" + h.first + "&limit=" + PAGE);
+    if (!evs || state.hist !== h) return;
+    const fromBottom = d.scrollHeight - d.scrollTop;
+    evs.reverse();
+    h.events.unshift(...evs);
+    if (evs.length) h.first = evs[0].seq;
+    h.more = evs.length === PAGE;
+    draw();
+    d.scrollTop = d.scrollHeight - fromBottom; // keep the reader's place
+  } finally {
+    h.olderBusy = false;
+  }
 }
 
 // ---- selection & keys --------------------------------------------------

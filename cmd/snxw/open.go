@@ -10,7 +10,9 @@ import (
 
 // runOpen opens the board with the token in the URL fragment. A fragment never
 // leaves the browser: it is not sent to the server, logged, or put in a
-// Referer, and the page removes it from the address bar once read.
+// Referer, and the page removes it from the address bar once read. It does sit
+// briefly in the opener's process arguments, readable by other local users on
+// a shared machine; there, paste the token from `snxw token` instead.
 func runOpen() error {
 	cfg, err := config.Load()
 	if err != nil {

@@ -88,3 +88,22 @@ func TestUIServedWithCSP(t *testing.T) {
 		}
 	}
 }
+
+// `snxw emit` posts without a session: the fold files it under the source, and
+// the history endpoint must find it under the same key.
+func TestHistoryForSessionlessEvents(t *testing.T) {
+	s, st := newTestServer(t, 0)
+	post(s.Handler(), testToken, `{"source":"cli","kind":"tool.start","body":{"tool":"build"}}`)
+	waitForEvents(t, st, 1)
+
+	var snap sessionsSnapshot
+	getJSON(t, s.Handler(), "/v1/sessions", &snap)
+	if len(snap.Sessions) != 1 || snap.Sessions[0].ID != "cli" {
+		t.Fatalf("sessions = %+v", snap.Sessions)
+	}
+	var h history
+	getJSON(t, s.Handler(), "/v1/events?session=cli", &h)
+	if len(h.Events) != 1 {
+		t.Fatalf("history for cli = %+v, want the event", h.Events)
+	}
+}
