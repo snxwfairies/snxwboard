@@ -29,6 +29,8 @@ const usage = `snxw — local event daemon for coding agents
 usage:
   snxw up                  run the daemon in the foreground
   snxw status              print daemon health
+  snxw open                open the board in your browser, signed in
+  snxw token               print the auth token
   snxw emit <kind> [json]  post an event to the daemon
   snxw connect claude [--project DIR]
                            add snxw hooks to Claude Code settings
@@ -56,6 +58,15 @@ func run(args []string) error {
 		return runStatus()
 	case "emit":
 		return runEmit(args[1:])
+	case "open":
+		return runOpen()
+	case "token":
+		cfg, err := config.Load()
+		if err != nil {
+			return err
+		}
+		fmt.Println(cfg.Token)
+		return nil
 	case "connect":
 		return runConnect(args[1:], true)
 	case "disconnect":

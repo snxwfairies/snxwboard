@@ -18,6 +18,7 @@ import (
 
 	"github.com/snxwfairies-ai/snxwboard-oss/internal/fold"
 	"github.com/snxwfairies-ai/snxwboard-oss/internal/store"
+	"github.com/snxwfairies-ai/snxwboard-oss/internal/web"
 )
 
 const (
@@ -89,6 +90,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /healthz", s.handleHealth)
 	mux.Handle("POST /v1/events", s.auth(http.HandlerFunc(s.handleEvents)))
 	mux.Handle("POST /v1/hooks/claude", s.auth(http.HandlerFunc(s.handleClaudeHook)))
+	mux.Handle("GET /v1/events", s.auth(http.HandlerFunc(s.handleHistory)))
+	mux.Handle("GET /", web.Handler())
 	mux.Handle("GET /v1/sessions", s.auth(http.HandlerFunc(s.handleSessions)))
 	mux.Handle("GET /v1/stream", s.auth(http.HandlerFunc(s.handleStream)))
 	return mux
