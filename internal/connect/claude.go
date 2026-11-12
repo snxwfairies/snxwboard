@@ -12,7 +12,7 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/snxwfairies-ai/snxwboard-oss/internal/adapter/claude"
+	"github.com/snxwfairies/snxwboard/internal/adapter/claude"
 )
 
 // hookPath marks a hook as ours: any http hook whose URL ends with it.

@@ -4,3 +4,4 @@ bin/
 *.db-shm
 coverage
 coverage.out
+dist/

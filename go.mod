@@ -1,4 +1,4 @@
-module github.com/snxwfairies-ai/snxwboard-oss
+module github.com/snxwfairies/snxwboard
 
 go 1.23.0
 

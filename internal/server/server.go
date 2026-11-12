@@ -16,9 +16,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/snxwfairies-ai/snxwboard-oss/internal/fold"
-	"github.com/snxwfairies-ai/snxwboard-oss/internal/store"
-	"github.com/snxwfairies-ai/snxwboard-oss/internal/web"
+	"github.com/snxwfairies/snxwboard/internal/fold"
+	"github.com/snxwfairies/snxwboard/internal/store"
+	"github.com/snxwfairies/snxwboard/internal/web"
 )
 
 const (

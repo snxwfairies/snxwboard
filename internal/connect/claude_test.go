@@ -4,10 +4,11 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
-	"github.com/snxwfairies-ai/snxwboard-oss/internal/adapter/claude"
+	"github.com/snxwfairies/snxwboard/internal/adapter/claude"
 )
 
 func readSettings(t *testing.T, path string) map[string]any {
@@ -53,7 +54,8 @@ func TestConnectClaudeMergesAndIsIdempotent(t *testing.T) {
 	if len(pre) != 2 {
 		t.Fatalf("PreToolUse groups = %d, want user's guard + snxw", len(pre))
 	}
-	if fi, _ := os.Stat(path); fi.Mode().Perm() != 0o600 {
+	// Windows has no Unix permission bits.
+	if fi, _ := os.Stat(path); runtime.GOOS != "windows" && fi.Mode().Perm() != 0o600 {
 		t.Fatalf("mode = %o, want 600 (file holds the token)", fi.Mode().Perm())
 	}
 	if _, err := os.Stat(path + ".snxw.bak"); err != nil {

@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/snxwfairies-ai/snxwboard-oss/internal/store"
+	"github.com/snxwfairies/snxwboard/internal/store"
 )
 
 const testToken = "0123456789abcdef"

@@ -1,0 +1,33 @@
+name: Bug report
+description: Something does not work as described.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect?
+    validations: {required: true}
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: "1. snxw up\n2. ..."
+    validations: {required: true}
+  - type: input
+    id: version
+    attributes:
+      label: snxw version
+      placeholder: output of `snxw version`
+    validations: {required: true}
+  - type: input
+    id: env
+    attributes:
+      label: OS, and agent with version
+      placeholder: macOS 15, Claude Code 2.1.0
+    validations: {required: true}
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Output of `snxw up`. Check it for anything private before you paste.
+      render: text

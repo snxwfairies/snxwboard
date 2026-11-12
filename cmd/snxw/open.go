@@ -5,7 +5,7 @@ import (
 	"os/exec"
 	"runtime"
 
-	"github.com/snxwfairies-ai/snxwboard-oss/internal/config"
+	"github.com/snxwfairies/snxwboard/internal/config"
 )
 
 // runOpen opens the board with the token in the URL fragment. A fragment never

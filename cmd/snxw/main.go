@@ -13,16 +13,29 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"syscall"
 	"time"
 
-	"github.com/snxwfairies-ai/snxwboard-oss/internal/config"
-	"github.com/snxwfairies-ai/snxwboard-oss/internal/server"
-	"github.com/snxwfairies-ai/snxwboard-oss/internal/store"
+	"github.com/snxwfairies/snxwboard/internal/config"
+	"github.com/snxwfairies/snxwboard/internal/server"
+	"github.com/snxwfairies/snxwboard/internal/store"
 )
 
-const version = "0.1.0-dev"
+// version is set at release time with -ldflags "-X main.version=v1.2.3".
+// `go install ...@v1.2.3` leaves it empty, so the module version is used.
+var version = ""
+
+func init() {
+	if version != "" {
+		return
+	}
+	version = "dev"
+	if bi, ok := debug.ReadBuildInfo(); ok && bi.Main.Version != "" && bi.Main.Version != "(devel)" {
+		version = bi.Main.Version
+	}
+}
 
 const usage = `snxw — local event daemon for coding agents
 
