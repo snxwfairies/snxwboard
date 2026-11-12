@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/snxwfairies-ai/snxwboard-oss/internal/store"
+	"github.com/snxwfairies/snxwboard/internal/store"
 )
 
 func getJSON(t *testing.T, h http.Handler, path string, out any) int {

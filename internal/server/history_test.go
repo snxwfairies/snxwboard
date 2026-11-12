@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/snxwfairies-ai/snxwboard-oss/internal/store"
+	"github.com/snxwfairies/snxwboard/internal/store"
 )
 
 type history struct {

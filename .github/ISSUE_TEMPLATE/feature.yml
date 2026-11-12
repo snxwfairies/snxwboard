@@ -1,0 +1,13 @@
+name: Feature request
+description: Suggest an adapter, a feed or an improvement.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve for you?
+    validations: {required: true}
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like to happen?

@@ -7,9 +7,9 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/snxwfairies-ai/snxwboard-oss/internal/adapter/claude"
-	"github.com/snxwfairies-ai/snxwboard-oss/internal/redact"
-	"github.com/snxwfairies-ai/snxwboard-oss/internal/store"
+	"github.com/snxwfairies/snxwboard/internal/adapter/claude"
+	"github.com/snxwfairies/snxwboard/internal/redact"
+	"github.com/snxwfairies/snxwboard/internal/store"
 )
 
 const hookBodyBytes = 32 << 20

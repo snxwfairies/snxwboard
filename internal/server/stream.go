@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/snxwfairies-ai/snxwboard-oss/internal/fold"
-	"github.com/snxwfairies-ai/snxwboard-oss/internal/store"
+	"github.com/snxwfairies/snxwboard/internal/fold"
+	"github.com/snxwfairies/snxwboard/internal/store"
 )
 
 const (

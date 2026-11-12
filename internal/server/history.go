@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/snxwfairies-ai/snxwboard-oss/internal/store"
+	"github.com/snxwfairies/snxwboard/internal/store"
 )
 
 const (

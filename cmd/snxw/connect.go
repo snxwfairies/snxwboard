@@ -5,8 +5,8 @@ import (
 	"flag"
 	"fmt"
 
-	"github.com/snxwfairies-ai/snxwboard-oss/internal/config"
-	"github.com/snxwfairies-ai/snxwboard-oss/internal/connect"
+	"github.com/snxwfairies/snxwboard/internal/config"
+	"github.com/snxwfairies/snxwboard/internal/connect"
 )
 
 func runConnect(args []string, on bool) error {
