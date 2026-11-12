@@ -50,21 +50,27 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Reject the whole batch up front when it can't fit, so a client retrying a
-	// 503 never duplicates events that were half-accepted. The ingestMu keeps
-	// the room check and the sends atomic against other handlers.
-	s.ingestMu.Lock()
-	if cap(s.ingest)-len(s.ingest) < len(evs) {
-		s.ingestMu.Unlock()
-		s.log.Warn("ingest buffer full", "rejected", len(evs))
+	if !s.enqueue(evs) {
 		writeError(w, http.StatusServiceUnavailable, "ingest buffer full")
 		return
 	}
-	for _, ev := range evs {
-		s.ingest <- ev // cannot block: room was reserved above and only handlers send
-	}
-	s.ingestMu.Unlock()
 	writeJSON(w, http.StatusAccepted, map[string]int{"accepted": len(evs)})
+}
+
+// enqueue appends evs to the ingest buffer, all or nothing, so a client
+// retrying a 503 never duplicates events that were half-accepted. ingestMu keeps
+// the room check and the sends atomic against other handlers.
+func (s *Server) enqueue(evs []store.Event) bool {
+	s.ingestMu.Lock()
+	defer s.ingestMu.Unlock()
+	if cap(s.ingest)-len(s.ingest) < len(evs) {
+		s.log.Warn("ingest buffer full", "rejected", len(evs))
+		return false
+	}
+	for _, ev := range evs {
+		s.ingest <- ev // cannot block: room was checked above and only enqueue sends
+	}
+	return true
 }
 
 // sessionKey is the id an event folds under: its session, else its source.
