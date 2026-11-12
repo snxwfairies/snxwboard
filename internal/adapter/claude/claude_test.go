@@ -27,6 +27,8 @@ func TestTranslate(t *testing.T) {
 			"attention", map[string]any{"reason": "permission_prompt", "message": "Claude needs permission"}},
 		{"stop", `{"session_id":"s","hook_event_name":"Stop","last_assistant_message":"Done."}`,
 			"turn.end", map[string]any{"last": "Done."}},
+		{"api error", `{"session_id":"s","hook_event_name":"StopFailure","error":"rate_limit"}`,
+			"turn.end", map[string]any{"error": "rate_limit", "ok": false}},
 		{"end", `{"session_id":"s","hook_event_name":"SessionEnd","reason":"logout"}`,
 			"session.end", map[string]any{"reason": "logout"}},
 		{"model object", `{"session_id":"s","hook_event_name":"SessionStart","model":{"id":"m-1"}}`,

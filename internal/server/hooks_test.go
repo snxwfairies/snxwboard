@@ -58,10 +58,28 @@ func TestClaudeHookFoldsIntoSession(t *testing.T) {
 }
 
 func TestClaudeHookNeedsToken(t *testing.T) {
-	s, _ := newTestServer(t, 0)
-	rec := postHook(s.Handler(), "", `{"session_id":"c1","hook_event_name":"Stop"}`)
-	if rec.Code != http.StatusUnauthorized {
-		t.Fatalf("status = %d, want 401", rec.Code)
+	s, st := newTestServer(t, 0)
+	rec := postHook(s.Handler(), "wrong", `{"session_id":"c1","hook_event_name":"UserPromptSubmit","prompt":"hi"}`)
+	// Still the empty 204 Claude Code expects, but nothing is stored.
+	if rec.Code != http.StatusNoContent || rec.Body.Len() != 0 {
+		t.Fatalf("status %d body %q, want 204 and empty", rec.Code, rec.Body.String())
+	}
+	postHook(s.Handler(), testToken, `{"session_id":"c1","hook_event_name":"Stop"}`)
+	evs := waitForEvents(t, st, 1)
+	if len(evs) != 1 || evs[0].Kind != "turn.end" {
+		t.Fatalf("stored %+v, want only the authorized event", evs)
+	}
+}
+
+// A Write of a large file must not cost the event: the payload is parsed
+// whole and clipped by the adapter.
+func TestClaudeHookLargePayload(t *testing.T) {
+	s, st := newTestServer(t, 0)
+	big := strings.Repeat("x", 3<<20)
+	postHook(s.Handler(), testToken, `{"session_id":"c1","hook_event_name":"PreToolUse","tool_name":"Write","tool_input":{"file_path":"/a.txt","content":"`+big+`"}}`)
+	evs := waitForEvents(t, st, 1)
+	if len(evs[0].Body) > 1000 {
+		t.Fatalf("stored body is %d bytes, want the clipped event", len(evs[0].Body))
 	}
 }
 

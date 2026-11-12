@@ -89,7 +89,9 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.handleHealth)
 	mux.Handle("POST /v1/events", s.auth(http.HandlerFunc(s.handleEvents)))
-	mux.Handle("POST /v1/hooks/claude", s.auth(http.HandlerFunc(s.handleClaudeHook)))
+	// Not wrapped in auth: the hook checks the token itself so that even a
+	// stale token gets the empty 204 Claude Code expects.
+	mux.HandleFunc("POST /v1/hooks/claude", s.handleClaudeHook)
 	mux.Handle("GET /v1/events", s.auth(http.HandlerFunc(s.handleHistory)))
 	mux.Handle("GET /", web.Handler())
 	mux.Handle("GET /v1/sessions", s.auth(http.HandlerFunc(s.handleSessions)))
@@ -194,13 +196,18 @@ func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 
 func (s *Server) auth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		got, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
-		if !ok || s.token == "" || subtle.ConstantTimeCompare([]byte(got), []byte(s.token)) != 1 {
+		if !s.authorized(r) {
 			writeError(w, http.StatusUnauthorized, "unauthorized")
 			return
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// authorized reports whether r carries the daemon's bearer token.
+func (s *Server) authorized(r *http.Request) bool {
+	got, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+	return ok && s.token != "" && subtle.ConstantTimeCompare([]byte(got), []byte(s.token)) == 1
 }
 
 // checkBindAddr refuses to expose the daemon beyond loopback unless the user

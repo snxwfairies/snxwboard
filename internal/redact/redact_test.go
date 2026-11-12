@@ -88,3 +88,35 @@ func TestRedactReviewCases(t *testing.T) {
 		})
 	}
 }
+
+// Cases from the pre-merge review: real secrets that slipped through, and
+// ordinary text that was wrongly redacted.
+func TestRedactReviewProbes(t *testing.T) {
+	cases := []struct{ name, in, want string }{
+		{"path with -sk- inside", `{"cwd":"/home/u/projects/task-management-service-api"}`, ``},
+		{"branch with -sk- inside", `{"arg":"git checkout disk-usage-monitoring-dashboard"}`, ``},
+		{"real sk key after space", `{"arg":"OPENAI=x; echo sk-proj-abcdefghijklmnopqrstuv"}`, `{"arg":"OPENAI=x; echo [redacted]"}`},
+		{"flag with =", `{"arg":"mysql --password=hunter2 -u root"}`, `{"arg":"mysql --password=[redacted] -u root"}`},
+		{"flag with space", `{"arg":"tool --api-key abc123 run"}`, `{"arg":"tool --api-key [redacted] run"}`},
+		{"url password", `{"arg":"psql postgres://admin:S3cretPass@db:5432/app"}`, `{"arg":"psql postgres://admin:[redacted]@db:5432/app"}`},
+		{"url token", `{"arg":"git clone https://user:tok123@github.com/o/r"}`, `{"arg":"git clone https://user:[redacted]@github.com/o/r"}`},
+		{"stripe", `{"out":"sk_live_` + strings.Repeat("a", 24) + `"}`, `{"out":"[redacted]"}`},
+		{"google", `{"out":"AIza` + strings.Repeat("b", 35) + `"}`, `{"out":"[redacted]"}`},
+		{"yaml line", `{"out":"db:\n  password: hunter2\n  host: x"}`, `{"out":"db:\n  password: [redacted]\n  host: x"}`},
+		{"json in a command", `{"arg":"curl -d '{\"password\":\"hunter2\",\"user\":\"bob\"}' x"}`, `{"arg":"curl -d '{\"password\":\"[redacted]\",\"user\":\"bob\"}' x"}`},
+		{"max_tokens kept", `{"max_tokens":"1000","tokenizer":"bpe"}`, ``},
+		{"camelCase secret", `{"accessToken":"abc","clientSecret":"def"}`, `{"accessToken":"[redacted]","clientSecret":"[redacted]"}`},
+		{"plain colon prose kept", `{"last":"Note: the build passed"}`, ``},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			want := c.want
+			if want == "" {
+				want = c.in // unchanged
+			}
+			if got := string(Redact(json.RawMessage(c.in))); got != want {
+				t.Fatalf("\n got  %s\n want %s", got, want)
+			}
+		})
+	}
+}
