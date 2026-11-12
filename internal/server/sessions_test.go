@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -343,5 +344,46 @@ func TestSessionsSnapshotFromManySources(t *testing.T) {
 		if want := fmt.Sprintf("s%d", i); sess.ID != want {
 			t.Fatalf("session %d = %q, want %q", i, sess.ID, want)
 		}
+	}
+}
+
+// A failed write must not leave folded state ahead of the database. The
+// sessions table is dropped behind the daemon's back, so the batch fails at
+// the session upsert, after the fold already ran.
+func TestFoldUndoneWhenWriteFails(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "events.db")
+	st, err := store.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := New(Options{Store: st, Token: testToken, Version: "test", Logger: discardLogger()})
+	s.Start()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		s.Shutdown(ctx)
+		st.Close()
+	})
+
+	post(s.Handler(), testToken, `{"source":"x","session":"ok","kind":"tool.start"}`)
+	waitForEvents(t, st, 1)
+
+	raw, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := raw.Exec(`DROP TABLE sessions`); err != nil {
+		t.Fatal(err)
+	}
+	raw.Close()
+
+	post(s.Handler(), testToken, `[{"source":"x","session":"ok","kind":"tool.start"},{"source":"x","session":"lost","kind":"tool.start"}]`)
+	time.Sleep(300 * time.Millisecond) // > flush interval
+
+	if sess, _ := s.folder.Get("ok"); sess.ToolCalls != 1 {
+		t.Fatalf("ok session ran ahead of the log: %+v", sess)
+	}
+	if _, ok := s.folder.Get("lost"); ok {
+		t.Fatal("session from a failed batch kept in memory")
 	}
 }

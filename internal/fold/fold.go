@@ -71,6 +71,22 @@ func (f *Folder) Load(list []Session) {
 	}
 }
 
+// Restore puts sessions back the way Get found them, and forgets those that
+// did not exist (ok false). The writer uses it to undo a fold whose write
+// transaction failed, so memory never runs ahead of the database.
+func (f *Folder) Restore(prev map[string]*Session) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for id, s := range prev {
+		if s == nil {
+			delete(f.sess, id)
+			continue
+		}
+		c := *s
+		f.sess[id] = &c
+	}
+}
+
 // Get returns a copy of one session.
 func (f *Folder) Get(id string) (Session, bool) {
 	f.mu.Lock()
@@ -142,6 +158,11 @@ func (f *Folder) Apply(ev store.Event) (map[string]any, bool) {
 			s.Errors++
 			p["errors"] = s.Errors
 		}
+		// A tool finishing means the user already answered any permission
+		// prompt it raised: the agent is working again.
+		if s.Status == StatusWaiting {
+			setStatus(p, s, StatusRunning)
+		}
 	case KindPromptSubmit:
 		if s.Tool != "" {
 			s.Tool = ""
@@ -151,6 +172,11 @@ func (f *Folder) Apply(ev store.Event) (map[string]any, bool) {
 	case KindAttention:
 		setStatus(p, s, StatusWaiting)
 	case KindTurnEnd:
+		// ok:false is a turn cut short by an API error (rate limit, auth).
+		if ok, present := boolField(b, "ok"); present && !ok {
+			s.Errors++
+			p["errors"] = s.Errors
+		}
 		setStatus(p, s, StatusIdle)
 	case KindSessionEnd:
 		if ok, present := boolField(b, "ok"); present && !ok {
