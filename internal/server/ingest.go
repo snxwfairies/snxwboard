@@ -11,6 +11,8 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/snxwfairies-ai/snxwboard-oss/internal/fold"
+	"github.com/snxwfairies-ai/snxwboard-oss/internal/redact"
 	"github.com/snxwfairies-ai/snxwboard-oss/internal/store"
 )
 
@@ -65,6 +67,14 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusAccepted, map[string]int{"accepted": len(evs)})
 }
 
+// sessionKey is the id an event folds under: its session, else its source.
+func sessionKey(ev store.Event) string {
+	if ev.Session != "" {
+		return ev.Session
+	}
+	return ev.Source
+}
+
 // parseEvents decodes and validates one event or a batch of at most maxBatch.
 func parseEvents(data []byte) ([]store.Event, error) {
 	data = bytes.TrimSpace(data)
@@ -97,7 +107,7 @@ func parseEvents(data []byte) ([]store.Event, error) {
 		if err := validateEvent(it); err != nil {
 			return nil, fmt.Errorf("event %d: %w", i, err)
 		}
-		body := it.Body
+		body := redact.Redact(it.Body)
 		if len(body) == 0 {
 			body = json.RawMessage("null")
 		}
@@ -173,16 +183,76 @@ func (s *Server) writeLoop() {
 	}
 }
 
-// flush persists a batch in one transaction, then publishes the events that got
-// their seq assigned.
+// flush persists a batch in one transaction, folds it into session state, then
+// publishes the raw events and the per-session patches that changed.
 func (s *Server) flush(batch []store.Event) {
 	ctx, cancel := context.WithTimeout(context.Background(), writeTimeout)
 	defer cancel()
-	if err := s.st.InsertBatch(ctx, batch); err != nil {
-		s.log.Error("persist events", "count", len(batch), "err", err)
+
+	type change struct {
+		id    string
+		patch map[string]any
+		seq   int64
+	}
+	changes := make([]change, 0, 4)
+	index := make(map[string]int, 4)
+	// prev holds each touched session as it was before this batch (nil if
+	// new), to undo the fold if the transaction fails.
+	prev := make(map[string]*fold.Session, 4)
+
+	err := s.st.WriteBatch(ctx, batch, func(evs []store.Event) []store.SessionRow {
+		for _, ev := range evs {
+			if key := sessionKey(ev); key != "" {
+				if _, seen := prev[key]; !seen {
+					if before, ok := s.folder.Get(key); ok {
+						prev[key] = &before
+					} else {
+						prev[key] = nil
+					}
+				}
+			}
+			patch, changed := s.folder.Apply(ev)
+			if !changed {
+				continue
+			}
+			id := sessionKey(ev)
+			if i, seen := index[id]; seen {
+				for k, v := range patch {
+					changes[i].patch[k] = v
+				}
+				changes[i].seq = ev.Seq
+				continue
+			}
+			index[id] = len(changes)
+			changes = append(changes, change{id: id, patch: patch, seq: ev.Seq})
+		}
+
+		rows := make([]store.SessionRow, 0, len(changes))
+		for _, c := range changes {
+			sess, ok := s.folder.Get(c.id)
+			if !ok {
+				continue
+			}
+			data, err := json.Marshal(sess)
+			if err != nil {
+				s.log.Error("marshal session", "id", c.id, "err", err)
+				continue
+			}
+			rows = append(rows, store.SessionRow{ID: c.id, Data: data, UpdatedSeq: c.seq})
+		}
+		return rows
+	})
+	if err != nil {
+		// The batch is lost (its events were already acknowledged); at least
+		// keep the folded state consistent with what is on disk.
+		s.folder.Restore(prev)
+		s.log.Error("persist events: batch dropped", "count", len(batch), "err", err)
 		return
 	}
 	for _, ev := range batch {
 		s.publish(ev)
+	}
+	for _, c := range changes {
+		s.publishSession(c.id, c.patch, c.seq)
 	}
 }
