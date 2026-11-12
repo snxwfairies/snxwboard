@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -88,7 +89,8 @@ func TestClaudeHookLargePayload(t *testing.T) {
 func TestClaudeHookContextWithoutSessionStart(t *testing.T) {
 	s, st := newTestServer(t, 0)
 	dir := t.TempDir()
-	postHook(s.Handler(), testToken, `{"session_id":"p1","hook_event_name":"UserPromptSubmit","cwd":"`+dir+`","prompt":"hi"}`)
+	cwd, _ := json.Marshal(dir) // Windows paths carry backslashes
+	postHook(s.Handler(), testToken, `{"session_id":"p1","hook_event_name":"UserPromptSubmit","cwd":`+string(cwd)+`,"prompt":"hi"}`)
 	waitForEvents(t, st, 1)
 
 	var snap struct {
