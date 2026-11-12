@@ -173,3 +173,41 @@ func TestLoadSeedsState(t *testing.T) {
 		t.Fatalf("session = %+v", s)
 	}
 }
+
+func TestToolEndAfterPermissionResumesRunning(t *testing.T) {
+	f := New()
+	f.Apply(store.Event{Seq: 1, Source: "claude", Session: "s", Kind: KindToolStart, Body: []byte(`{"tool":"Bash"}`)})
+	f.Apply(store.Event{Seq: 2, Source: "claude", Session: "s", Kind: KindAttention})
+	if s, _ := f.Get("s"); s.Status != StatusWaiting {
+		t.Fatalf("after attention: %s", s.Status)
+	}
+	p, _ := f.Apply(store.Event{Seq: 3, Source: "claude", Session: "s", Kind: KindToolEnd, Body: []byte(`{"ok":true}`)})
+	if s, _ := f.Get("s"); s.Status != StatusRunning || p["status"] != StatusRunning {
+		t.Fatalf("after approved tool finished: status %s, patch %v", s.Status, p)
+	}
+}
+
+func TestFailedTurnCountsAnError(t *testing.T) {
+	f := New()
+	f.Apply(store.Event{Seq: 1, Source: "claude", Session: "s", Kind: KindPromptSubmit})
+	f.Apply(store.Event{Seq: 2, Source: "claude", Session: "s", Kind: KindTurnEnd, Body: []byte(`{"ok":false}`)})
+	if s, _ := f.Get("s"); s.Status != StatusIdle || s.Errors != 1 {
+		t.Fatalf("got %+v, want idle with 1 error", s)
+	}
+}
+
+func TestRestoreUndoesAFold(t *testing.T) {
+	f := New()
+	f.Apply(store.Event{Seq: 1, Source: "x", Session: "old", Kind: KindToolStart})
+	before, _ := f.Get("old")
+	prev := map[string]*Session{"old": &before, "new": nil}
+	f.Apply(store.Event{Seq: 2, Source: "x", Session: "old", Kind: KindToolStart})
+	f.Apply(store.Event{Seq: 3, Source: "x", Session: "new", Kind: KindToolStart})
+	f.Restore(prev)
+	if s, _ := f.Get("old"); s.ToolCalls != 1 {
+		t.Fatalf("old not restored: %+v", s)
+	}
+	if _, ok := f.Get("new"); ok {
+		t.Fatal("new session survived the undo")
+	}
+}

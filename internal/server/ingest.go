@@ -11,6 +11,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/snxwfairies-ai/snxwboard-oss/internal/fold"
 	"github.com/snxwfairies-ai/snxwboard-oss/internal/redact"
 	"github.com/snxwfairies-ai/snxwboard-oss/internal/store"
 )
@@ -64,6 +65,14 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 	}
 	s.ingestMu.Unlock()
 	writeJSON(w, http.StatusAccepted, map[string]int{"accepted": len(evs)})
+}
+
+// sessionKey is the id an event folds under: its session, else its source.
+func sessionKey(ev store.Event) string {
+	if ev.Session != "" {
+		return ev.Session
+	}
+	return ev.Source
 }
 
 // parseEvents decodes and validates one event or a batch of at most maxBatch.
@@ -187,17 +196,26 @@ func (s *Server) flush(batch []store.Event) {
 	}
 	changes := make([]change, 0, 4)
 	index := make(map[string]int, 4)
+	// prev holds each touched session as it was before this batch (nil if
+	// new), to undo the fold if the transaction fails.
+	prev := make(map[string]*fold.Session, 4)
 
 	err := s.st.WriteBatch(ctx, batch, func(evs []store.Event) []store.SessionRow {
 		for _, ev := range evs {
+			if key := sessionKey(ev); key != "" {
+				if _, seen := prev[key]; !seen {
+					if before, ok := s.folder.Get(key); ok {
+						prev[key] = &before
+					} else {
+						prev[key] = nil
+					}
+				}
+			}
 			patch, changed := s.folder.Apply(ev)
 			if !changed {
 				continue
 			}
-			id := ev.Session
-			if id == "" {
-				id = ev.Source
-			}
+			id := sessionKey(ev)
 			if i, seen := index[id]; seen {
 				for k, v := range patch {
 					changes[i].patch[k] = v
@@ -225,7 +243,10 @@ func (s *Server) flush(batch []store.Event) {
 		return rows
 	})
 	if err != nil {
-		s.log.Error("persist events", "count", len(batch), "err", err)
+		// The batch is lost (its events were already acknowledged); at least
+		// keep the folded state consistent with what is on disk.
+		s.folder.Restore(prev)
+		s.log.Error("persist events: batch dropped", "count", len(batch), "err", err)
 		return
 	}
 	for _, ev := range batch {
