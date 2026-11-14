@@ -22,7 +22,7 @@ ones are blocked on you, sorted to the top.
 
 ## Quick start
 
-Needs Go 1.23 or newer (release binaries come with v0.1).
+Needs Go 1.26.11 or newer (release binaries come with v0.1).
 
 ```sh
 go install github.com/snxwfairies/snxwboard/cmd/snxw@latest
