@@ -29,7 +29,7 @@ attempts by two agents. A session that starts without a card gets one automatica
 
 Columns, in order: Triage, Todo, Ready, Running, Blocked, Review, Done (Archived is a filter, not a column).
 People can drag cards between Triage, Todo, Ready, Blocked and Done. Running and Review are set only by events: a
-run starting, a PR opening for review.
+run starting, or an agent handing the card back for review (from Phase 3 also a PR opening).
 
 1. **Column view over existing state.** Show today's sessions as auto-cards: `running` goes to Running,
    `waiting_for_you` to Blocked, `done` to Done, `failed` to Blocked with the error. Same stream, same budgets.
@@ -38,7 +38,8 @@ run starting, a PR opening for review.
 3. **Comments and attention.** Comments on a card go to its agent: shown in its next session through the MCP server
    (`get_card`, `add_comment`) and the Claude Code hook. An attention bar counts cards that are blocked or
    waiting for you, first in the list.
-4. **Dependencies, run history and logs.** Parent and child cards; a card with an open parent cannot go to Ready.
+4. **Dependencies, run history and logs.** A card can be blocked by other cards and cannot go to Ready while any
+   of them is open. Parent and child cards only group work and never block it.
    The card detail shows every run with its agent, duration, cost and log.
 5. **Several boards.** One per project or team, with a switcher, search and filters (assignee, label, archived), and
    bulk complete or archive.
