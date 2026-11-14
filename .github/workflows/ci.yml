@@ -39,7 +39,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: go.mod
+          # Scan with a current, patched toolchain. go.mod pins the build
+          # toolchain (1.23), but govulncheck@latest needs a newer Go and an
+          # EOL stdlib reports vulnerabilities that are already fixed.
+          go-version: stable
       - run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
 
   release-config:
