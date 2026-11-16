@@ -17,16 +17,19 @@ const (
 // first), at most limit.
 func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
+	// No session means the whole feed: the newest `limit` events across every
+	// session, returned oldest first (QueryRecent reverses the rows). This is
+	// what the MCP search_feed tool reads (2026-11-16).
 	session := q.Get("session")
-	if session == "" {
-		writeError(w, http.StatusBadRequest, "session required")
-		return
-	}
 	after, err1 := optInt(q.Get("after"))
 	before, err2 := optInt(q.Get("before"))
 	limit, err3 := optInt(q.Get("limit"))
 	if err1 != nil || err2 != nil || err3 != nil || after < 0 || before < 0 || limit < 0 {
 		writeError(w, http.StatusBadRequest, "after, before and limit must be non-negative integers")
+		return
+	}
+	if session == "" && (after > 0 || before > 0) {
+		writeError(w, http.StatusBadRequest, "after and before require a session")
 		return
 	}
 	if limit == 0 {
@@ -35,7 +38,17 @@ func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
 	if limit > historyMax {
 		limit = historyMax
 	}
-	evs, err := s.st.QuerySession(r.Context(), session, after, before, int(limit))
+	var (
+		evs []store.Event
+		err error
+	)
+	if session == "" {
+		// No session: the newest events across every session, which is what a
+		// feed search wants (MCP search_feed, 2026-11-16).
+		evs, err = s.st.QueryRecent(r.Context(), limit)
+	} else {
+		evs, err = s.st.QuerySession(r.Context(), session, after, before, limit)
+	}
 	if err != nil {
 		s.log.Error("read history", "session", session, "err", err)
 		writeError(w, http.StatusInternalServerError, "read history")

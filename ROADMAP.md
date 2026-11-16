@@ -15,7 +15,8 @@ Each step is one small PR with tests and, where it applies, a benchmark against 
    desktop notifications. Done in PR #4; a `⌘K` command palette moves to Phase 2.
 6. Codex adapter (MCP tool hooks) + `snxw connect codex`.
 7. OpenCode adapter (`/event` SSE) + `snxw connect opencode`.
-8. MCP server: `list_sessions`, `get_session`, `whats_running`, `notify_me`.
+8. ~~MCP server: `list_sessions`, `get_session`, `whats_running`, `notify_me`.~~ Done: `snxw mcp` over stdio,
+   plus `search_feed` and `snxw_ingest`. Streamable HTTP (`POST /mcp`) is still open.
 9. Benchmarks for every budget, wired into CI. Tag v0.1: the release workflow already builds binaries and
    checksums for Linux, macOS and Windows.
 

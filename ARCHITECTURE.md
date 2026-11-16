@@ -79,7 +79,9 @@ Fold rules turn adapter events into session state. Example: Claude `Notification
 
 ## MCP server
 
-`snxw mcp` (stdio) and `POST /mcp` (streamable HTTP, token-auth).
+`snxw mcp` (stdio, implemented) and `POST /mcp` (streamable HTTP, token-auth, still open). The stdio server
+speaks newline-delimited JSON-RPC and answers `initialize`, `tools/list`, `tools/call` and `ping`; it reads the
+daemon's own HTTP surface rather than opening SQLite a second time.
 
 - Tools: `snxw_ingest` (used by Codex hooks), `list_sessions`, `get_session`, `search_feed`, `notify_me`
   (an agent can ask for the human's attention), `whats_running` (summary for an agent deciding whether to

@@ -57,7 +57,17 @@ func TestHistoryPaging(t *testing.T) {
 
 func TestHistoryValidation(t *testing.T) {
 	s, _ := newTestServer(t, 0)
-	for _, q := range []string{"", "?session=a&after=x", "?session=a&limit=-1"} {
+	// No session is no longer a validation error: it means the whole feed
+	// (2026-11-16, the MCP tools search across sessions).
+	for _, q := range []string{"?session=a&after=x", "?session=a&limit=-1"} {
+		var out map[string]any
+		if code := getJSON(t, s.Handler(), "/v1/events"+q, &out); code != http.StatusBadRequest {
+			t.Errorf("%q: status %d, want 400", q, code)
+		}
+	}
+	// Without a session there is no per-session window to page through, so a
+	// cursor is an error rather than a silently ignored parameter.
+	for _, q := range []string{"?after=1", "?before=1", "?after=1&before=2"} {
 		var out map[string]any
 		if code := getJSON(t, s.Handler(), "/v1/events"+q, &out); code != http.StatusBadRequest {
 			t.Errorf("%q: status %d, want 400", q, code)
@@ -68,6 +78,27 @@ func TestHistoryValidation(t *testing.T) {
 	s.Handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("no token: %d", rec.Code)
+	}
+}
+
+func TestHistoryAcrossSessions(t *testing.T) {
+	s, st := newTestServer(t, 0)
+	post(s.Handler(), testToken, `[
+		{"source":"x","session":"a","kind":"tool.start","body":{"n":1}},
+		{"source":"x","session":"b","kind":"tool.start","body":{"n":2}},
+		{"source":"x","session":"a","kind":"attention","body":{"n":3}}]`)
+	waitForEvents(t, st, 3)
+
+	var out history
+	if code := getJSON(t, s.Handler(), "/v1/events?limit=2", &out); code != http.StatusOK {
+		t.Fatalf("no session: status %d, want 200", code)
+	}
+	if len(out.Events) != 2 {
+		t.Fatalf("want the 2 newest events, got %d", len(out.Events))
+	}
+	// newest two, returned oldest first so a reader can append them in order
+	if out.Events[0].Session != "b" || out.Events[1].Session != "a" {
+		t.Errorf("order = %s,%s, want b,a", out.Events[0].Session, out.Events[1].Session)
 	}
 }
 

@@ -191,7 +191,7 @@ func querySessions(ctx context.Context, q queryer) ([]SessionRow, error) {
 // QuerySession returns up to limit events of one session. With after > 0 it
 // returns the events after that seq, oldest first; otherwise the newest events
 // before the seq before (0 = no bound), newest first.
-func (s *Store) QuerySession(ctx context.Context, session string, after, before int64, limit int) ([]Event, error) {
+func (s *Store) QuerySession(ctx context.Context, session string, after, before, limit int64) ([]Event, error) {
 	var (
 		rows *sql.Rows
 		err  error
@@ -225,6 +225,25 @@ func (s *Store) QueryAfter(ctx context.Context, after int64, limit int) ([]Event
 		return nil, fmt.Errorf("query: %w", err)
 	}
 	return scanEvents(rows)
+}
+
+// QueryRecent returns the most recent events across every session, oldest
+// first, at most limit. The session detail view reads one session at a time;
+// this is for searching the whole feed, which the MCP tools do.
+func (s *Store) QueryRecent(ctx context.Context, limit int64) ([]Event, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT seq, ts, source, session, kind, body FROM events ORDER BY seq DESC LIMIT ?`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("query: %w", err)
+	}
+	evs, err := scanEvents(rows)
+	if err != nil {
+		return nil, err
+	}
+	for i, j := 0, len(evs)-1; i < j; i, j = i+1, j-1 {
+		evs[i], evs[j] = evs[j], evs[i]
+	}
+	return evs, nil
 }
 
 func scanEvents(rows *sql.Rows) ([]Event, error) {
