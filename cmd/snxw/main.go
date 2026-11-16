@@ -45,6 +45,7 @@ usage:
   snxw open                open the board in your browser, signed in
   snxw token               print the auth token
   snxw emit <kind> [json]  post an event to the daemon
+  snxw mcp                 serve the board to an MCP client over stdio
   snxw connect claude [--project DIR]
                            add snxw hooks to Claude Code settings
   snxw disconnect claude [--project DIR]
@@ -69,6 +70,8 @@ func run(args []string) error {
 		return runUp()
 	case "status":
 		return runStatus()
+	case "mcp":
+		return runMCP()
 	case "emit":
 		return runEmit(args[1:])
 	case "open":

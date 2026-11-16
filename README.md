@@ -40,6 +40,19 @@ Anything else can post events too:
 snxw emit note '{"text":"shipping v2"}'   # or POST /v1/events with the token
 ```
 
+### Let an agent act on the board
+
+`snxw mcp` serves the same board to any MCP client over stdio, so an agent can read the state instead of only
+reporting into it:
+
+```sh
+claude mcp add snxwboard -- snxw mcp
+```
+
+Tools: `whats_running` (what is in flight, what is blocked on you), `list_sessions`, `get_session`,
+`search_feed`, `notify_me` (ask the human), and `snxw_ingest` (record your own events). An agent that calls
+`whats_running` before it starts knows which repos another session already has open.
+
 ## How it works
 
 Agents push events to the daemon over HTTP. The daemon redacts them, appends them to a SQLite log and folds them
