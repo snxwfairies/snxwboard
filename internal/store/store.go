@@ -191,7 +191,7 @@ func querySessions(ctx context.Context, q queryer) ([]SessionRow, error) {
 // QuerySession returns up to limit events of one session. With after > 0 it
 // returns the events after that seq, oldest first; otherwise the newest events
 // before the seq before (0 = no bound), newest first.
-func (s *Store) QuerySession(ctx context.Context, session string, after, before int64, limit int) ([]Event, error) {
+func (s *Store) QuerySession(ctx context.Context, session string, after, before, limit int64) ([]Event, error) {
 	var (
 		rows *sql.Rows
 		err  error

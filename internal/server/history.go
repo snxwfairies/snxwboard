@@ -42,7 +42,7 @@ func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
 		// feed search wants (MCP search_feed, 2026-11-16).
 		evs, err = s.st.QueryRecent(r.Context(), limit)
 	} else {
-		evs, err = s.st.QuerySession(r.Context(), session, after, before, int(limit))
+		evs, err = s.st.QuerySession(r.Context(), session, after, before, limit)
 	}
 	if err != nil {
 		s.log.Error("read history", "session", session, "err", err)
