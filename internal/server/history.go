@@ -40,7 +40,7 @@ func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
 	if session == "" {
 		// No session: the newest events across every session, which is what a
 		// feed search wants (MCP search_feed, 2026-11-16).
-		evs, err = s.st.QueryRecent(r.Context(), int(limit))
+		evs, err = s.st.QueryRecent(r.Context(), limit)
 	} else {
 		evs, err = s.st.QuerySession(r.Context(), session, after, before, int(limit))
 	}

@@ -230,7 +230,7 @@ func (s *Store) QueryAfter(ctx context.Context, after int64, limit int) ([]Event
 // QueryRecent returns the most recent events across every session, oldest
 // first, at most limit. The session detail view reads one session at a time;
 // this is for searching the whole feed, which the MCP tools do.
-func (s *Store) QueryRecent(ctx context.Context, limit int) ([]Event, error) {
+func (s *Store) QueryRecent(ctx context.Context, limit int64) ([]Event, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT seq, ts, source, session, kind, body FROM events ORDER BY seq DESC LIMIT ?`, limit)
 	if err != nil {
