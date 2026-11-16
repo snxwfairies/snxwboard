@@ -335,6 +335,45 @@ func TestCoreToolsAreNeverGated(t *testing.T) {
 	}
 }
 
+func TestExportTrajectoryIsGatedAndNumbered(t *testing.T) {
+	b, _ := seeded()
+	b.events = []Event{
+		{Seq: 1, TS: 1000, Source: "cli", Kind: "session.start", Body: json.RawMessage(`{"repo":"x"}`)},
+		{Seq: 2, TS: 1001, Source: "cli", Kind: "tool.start", Body: json.RawMessage(`{"tool":"Bash"}`)},
+	}
+
+	// off: hidden
+	resps := serve(t, b, `{"jsonrpc":"2.0","id":30,"method":"tools/list"}`)
+	for _, raw := range resps[0]["result"].(map[string]any)["tools"].([]any) {
+		if raw.(map[string]any)["name"] == "export_trajectory" {
+			t.Fatal("export_trajectory must be hidden while trajectory is off")
+		}
+	}
+
+	// on: JSONL, one numbered object per event, oldest first
+	resp := serveWith(t, b, on(t, "trajectory"), call("31", "export_trajectory", `{"session":"calm"}`))[0]
+	text := resp["result"].(map[string]any)["content"].([]any)[0].(map[string]any)["text"].(string)
+	lines := strings.Split(strings.TrimSpace(text), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("want 2 trajectory lines, got %d: %q", len(lines), text)
+	}
+	var first map[string]any
+	if err := json.Unmarshal([]byte(lines[0]), &first); err != nil {
+		t.Fatalf("line 1 is not JSON: %v", err)
+	}
+	if first["step"].(float64) != 1 || first["kind"] != "session.start" || first["seq"].(float64) != 1 {
+		t.Errorf("first step = %v", first)
+	}
+}
+
+func TestExportTrajectoryNeedsASession(t *testing.T) {
+	b, _ := seeded()
+	resp := serveWith(t, b, on(t, "trajectory"), call("32", "export_trajectory", `{}`))[0]
+	if resp["result"].(map[string]any)["isError"] != true {
+		t.Errorf("a missing session must be an error result, got %v", resp)
+	}
+}
+
 func TestUnknownToolIsInvalidParams(t *testing.T) {
 	b, _ := seeded()
 	resp := serve(t, b, call("16", "no_such_tool", `{}`))[0]

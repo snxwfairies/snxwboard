@@ -67,8 +67,9 @@ run starting, or an agent handing the card back for review (from Phase 3 also a 
 Autonomous behaviour lands behind `snxw features`, every entry off, in the shape Hermes uses for its toolsets: the
 capability is in the binary and visible, and does nothing until the operator names it.
 
-- Wired: `session_search` (gates MCP `search_feed`), `autopilot` (escalates a session blocked past its deadline).
+- Wired: `session_search` (gates MCP `search_feed`), `trajectory` (gates MCP `export_trajectory`, JSONL),
+  `autopilot` (escalates a session blocked past its deadline).
 - Declared, waiting on a real implementation: `heartbeat`, `cron`, `dispatcher`, `subagents`, `skills`, `memory`,
-  `browser`, `computer_use`, `trajectory`.
+  `browser`, `computer_use`.
 - A declared feature cannot be enabled until it has a behaviour, so the catalogue never promises more than the
   binary does, and `snxw features` says so next to the name.

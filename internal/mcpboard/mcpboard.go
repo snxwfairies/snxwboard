@@ -14,6 +14,7 @@ package mcpboard
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -24,6 +25,7 @@ import (
 	"sync"
 
 	"github.com/snxwfairies/snxwboard/internal/features"
+	"github.com/snxwfairies/snxwboard/internal/trajectory"
 )
 
 // ProtocolVersion is the MCP revision this server speaks. A client asking for
@@ -87,7 +89,8 @@ func New(b Backend, set features.Set) *Server { return &Server{backend: b, featu
 
 // gatedTools maps a tool to the feature that must be on for it to exist.
 var gatedTools = map[string]string{
-	"search_feed": "session_search",
+	"search_feed":       "session_search",
+	"export_trajectory": "trajectory",
 }
 
 // Serve reads newline-delimited JSON-RPC from in and writes answers to out
@@ -303,6 +306,15 @@ func catalogue() []tool {
 			}, "message"),
 		},
 		{
+			Name: "export_trajectory",
+			Description: "Export one session's event log as a JSONL trajectory: one numbered step per event, oldest first, " +
+				"already redacted, ready for a batch run or a replay. Needs the trajectory feature.",
+			InputSchema: object(map[string]any{
+				"session": str("Session id to export."),
+				"limit":   map[string]any{"type": "integer", "description": "Maximum events. Default 1000, max 5000.", "minimum": 1, "maximum": 5000},
+			}, "session"),
+		},
+		{
 			Name:        "snxw_ingest",
 			Description: "Record one event from this agent, so the board shows what you are doing. Adapters use this; an agent without one can too.",
 			InputSchema: object(map[string]any{
@@ -410,6 +422,25 @@ func (s *Server) callTool(ctx context.Context, name string, args json.RawMessage
 			return "", err
 		}
 		return jsonText(map[string]any{"notified": true, "message": msg})
+	case "export_trajectory":
+		var in struct {
+			Session string `json:"session"`
+			Limit   int    `json:"limit"`
+		}
+		if err := json.Unmarshal(args, &in); err != nil {
+			return "", fmt.Errorf("session is required")
+		}
+		// Collect owns ordering, numbering and validation; numbering events here
+		// as well is how two shapes of the same export drift apart.
+		steps, err := trajectory.Collect(ctx, trajectoryReader{s.backend}, in.Session, in.Limit)
+		if err != nil {
+			return "", err
+		}
+		var buf bytes.Buffer
+		if err := trajectory.Write(&buf, steps); err != nil {
+			return "", err
+		}
+		return buf.String(), nil
 	case "snxw_ingest":
 		var in struct {
 			Kind    string          `json:"kind"`
@@ -504,4 +535,19 @@ func jsonText(v any) (string, error) {
 		return "", err
 	}
 	return string(b), nil
+}
+
+// trajectoryReader adapts the board's feed to the trajectory package.
+type trajectoryReader struct{ b Backend }
+
+func (t trajectoryReader) History(ctx context.Context, session string, limit int) ([]trajectory.Event, error) {
+	events, err := t.b.History(ctx, session, limit)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]trajectory.Event, 0, len(events))
+	for _, ev := range events {
+		out = append(out, trajectory.Event{Seq: ev.Seq, TS: ev.TS, Source: ev.Source, Session: ev.Session, Kind: ev.Kind, Body: ev.Body})
+	}
+	return out, nil
 }

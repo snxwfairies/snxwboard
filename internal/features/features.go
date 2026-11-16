@@ -113,8 +113,7 @@ var Catalog = []Feature{
 	{
 		Name:        "trajectory",
 		Tier:        TierRead,
-		Description: "Export a session's event log as a training trajectory, compressed, for batch runs.",
-		Planned:     true,
+		Description: "Export a session's event log as a JSONL trajectory, one numbered step per event, for batch runs and replay.",
 	},
 }
 

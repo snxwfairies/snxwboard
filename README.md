@@ -50,7 +50,8 @@ claude mcp add snxwboard -- snxw mcp
 ```
 
 Tools: `whats_running` (what is in flight, what is blocked on you), `list_sessions`, `get_session`,
-`search_feed`, `notify_me` (ask the human), and `snxw_ingest` (record your own events). An agent that calls
+`notify_me` (ask the human), and `snxw_ingest` (record your own events). Two more arrive with their feature:
+`search_feed` with `session_search`, and `export_trajectory` with `trajectory`. An agent that calls
 `whats_running` before it starts knows which repos another session already has open.
 
 ### Autonomy is opt-in, and off
