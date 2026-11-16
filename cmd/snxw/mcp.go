@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/snxwfairies/snxwboard/internal/config"
+	"github.com/snxwfairies/snxwboard/internal/features"
 	"github.com/snxwfairies/snxwboard/internal/mcpboard"
 )
 
@@ -22,7 +24,14 @@ func runMCP() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	set, err := features.Resolve(cfg.Features)
+	if err != nil {
+		return err
+	}
 	backend := mcpboard.NewHTTPBackend(cfg.Addr, cfg.Token)
 	fmt.Fprintf(os.Stderr, "snxwboard MCP: serving %s over stdio\n", cfg.Addr)
-	return mcpboard.New(backend).Serve(ctx, os.Stdin, os.Stdout)
+	if n := len(set.Names()); n > 0 {
+		fmt.Fprintf(os.Stderr, "features on: %s\n", strings.Join(set.Names(), " "))
+	}
+	return mcpboard.New(backend, set).Serve(ctx, os.Stdin, os.Stdout)
 }

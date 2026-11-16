@@ -23,6 +23,9 @@ type Config struct {
 	Dir   string
 	Addr  string
 	Token string
+	// Features are the opt-in capabilities the operator named. Empty means
+	// every autonomous behaviour stays off, which is the default.
+	Features []string
 }
 
 // Load resolves the data directory, address and token, creating the directory
@@ -39,7 +42,59 @@ func Load() (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Config{Dir: dir, Addr: Addr(), Token: tok}, nil
+	feats, err := Features(dir)
+	if err != nil {
+		return nil, err
+	}
+	return &Config{Dir: dir, Addr: Addr(), Token: tok, Features: feats}, nil
+}
+
+// FeaturesFile is where the enabled names live: one per line, 0600, beside the
+// token. $SNXW_FEATURES wins when set, so a run can enable something for one
+// process without editing the file.
+func FeaturesFile(dir string) string { return filepath.Join(dir, "features") }
+
+// Features reads the enabled feature names. It never fails open: a file it
+// cannot read is an error, and no file means none are enabled.
+func Features(dir string) ([]string, error) {
+	if env := os.Getenv("SNXW_FEATURES"); env != "" {
+		return strings.FieldsFunc(env, func(r rune) bool { return r == ',' || r == ' ' }), nil
+	}
+	raw, err := os.ReadFile(FeaturesFile(dir))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read features: %w", err)
+	}
+	var out []string
+	for _, line := range strings.Split(string(raw), "\n") {
+		if i := strings.IndexByte(line, '#'); i >= 0 {
+			line = line[:i]
+		}
+		if name := strings.TrimSpace(line); name != "" {
+			out = append(out, name)
+		}
+	}
+	return out, nil
+}
+
+// WriteFeatures replaces the enabled set. The CLI owns this; the daemon only
+// reads it.
+func WriteFeatures(dir string, names []string) error {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return fmt.Errorf("create data dir: %w", err)
+	}
+	body := strings.Join(names, "\n")
+	if body != "" {
+		body += "\n"
+	}
+	path := FeaturesFile(dir)
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, []byte(body), 0o600); err != nil {
+		return fmt.Errorf("write features: %w", err)
+	}
+	return os.Rename(tmp, path)
 }
 
 // Dir returns $SNXW_HOME, or <user config dir>/snxw.

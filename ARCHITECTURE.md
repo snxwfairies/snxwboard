@@ -24,6 +24,20 @@ into per-session state, and streams small deltas to the UIs (web, TUI, CLI) and 
 3. **Push, never poll, between our own processes.** UIs and MCP clients hold one SSE stream each.
 4. **Measured, not claimed.** Every budget below has a benchmark in CI that fails the build when exceeded.
 
+## Autonomy gate
+
+Every autonomous capability sits behind a named feature that ships off (`internal/features`). The catalogue is
+the contract: a name exists, states its tier (`read`/`act`/`spawn`), what it requires, and whether it has a
+behaviour wired yet. `Resolve` rejects unknown, planned and requirement-unmet names, so a config typo fails at
+startup rather than leaving a daemon running with less autonomy than its operator believes.
+
+A disabled feature is unreachable, not merely idle: the MCP server filters its tools out of `tools/list` and
+refuses them in `tools/call`. Observing the board (`whats_running`, `list_sessions`, `get_session`) and asking
+the human (`notify_me`, `snxw_ingest`) are not autonomy and are always available.
+
+Enabled names live in `<data dir>/features` (one per line, 0600) and `$SNXW_FEATURES` overrides them for a
+single process. The daemon logs the enabled set on every start, so "what is actually running here" has an answer.
+
 ## Runtime
 
 - **Go**, one static binary for macOS, Linux and Windows, with the web UI embedded (`embed.FS`). Pure-Go SQLite

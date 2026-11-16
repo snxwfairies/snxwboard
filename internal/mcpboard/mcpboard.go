@@ -22,6 +22,8 @@ import (
 	"sort"
 	"strings"
 	"sync"
+
+	"github.com/snxwfairies/snxwboard/internal/features"
 )
 
 // ProtocolVersion is the MCP revision this server speaks. A client asking for
@@ -71,14 +73,22 @@ type Backend interface {
 
 // Server answers MCP requests from one client at a time.
 type Server struct {
-	backend Backend
+	backend  Backend
+	features features.Set
 	// mu serialises writes to out; the loop itself is single-threaded, but a
 	// caller may add notifications later without re-deriving that guarantee.
 	mu sync.Mutex
 }
 
-// New returns a server reading the given backend.
-func New(b Backend) *Server { return &Server{backend: b} }
+// New returns a server reading the given backend. A feature set that is off hides
+// its tools: an agent cannot call what the operator has not enabled, and a tool it
+// cannot see is clearer than one that refuses.
+func New(b Backend, set features.Set) *Server { return &Server{backend: b, features: set} }
+
+// gatedTools maps a tool to the feature that must be on for it to exist.
+var gatedTools = map[string]string{
+	"search_feed": "session_search",
+}
 
 // Serve reads newline-delimited JSON-RPC from in and writes answers to out
 // until in is closed or ctx is cancelled.
@@ -187,7 +197,7 @@ func (s *Server) handle(ctx context.Context, req request) (response, bool) {
 	case "ping":
 		return response{JSONRPC: "2.0", ID: req.ID, Result: map[string]any{}}, true
 	case "tools/list":
-		return response{JSONRPC: "2.0", ID: req.ID, Result: map[string]any{"tools": tools()}}, true
+		return response{JSONRPC: "2.0", ID: req.ID, Result: map[string]any{"tools": s.tools()}}, true
 	case "tools/call":
 		var call struct {
 			Name      string          `json:"name"`
@@ -241,7 +251,19 @@ func str(desc string) map[string]any {
 	return map[string]any{"type": "string", "description": desc}
 }
 
-func tools() []tool {
+// tools is the catalogue minus everything the operator has not enabled.
+func (s *Server) tools() []tool {
+	out := make([]tool, 0, len(catalogue()))
+	for _, t := range catalogue() {
+		if need, gated := gatedTools[t.Name]; gated && !s.features.Enabled(need) {
+			continue
+		}
+		out = append(out, t)
+	}
+	return out
+}
+
+func catalogue() []tool {
 	return []tool{
 		{
 			Name: "whats_running",
@@ -293,6 +315,11 @@ func tools() []tool {
 }
 
 func (s *Server) callTool(ctx context.Context, name string, args json.RawMessage) (string, error) {
+	// A gated tool is refused even if a client remembers it from a run where the
+	// feature was on: the gate belongs to the daemon, not to the client.
+	if need, gated := gatedTools[name]; gated && !s.features.Enabled(need) {
+		return "", fmt.Errorf("tool %q is off: enable the %q feature with `snxw features enable %s`", name, need, need)
+	}
 	if len(args) == 0 {
 		args = json.RawMessage("{}")
 	}

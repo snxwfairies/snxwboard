@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/snxwfairies/snxwboard/internal/features"
 )
 
 // fakeBackend serves fixed state and records what the tools wrote.
@@ -44,10 +46,25 @@ func seeded() (*fakeBackend, []Session) {
 
 // serve runs one conversation through the server and returns the decoded
 // responses, keyed by the order they were written.
+// on builds a feature set, failing the test on an invalid name.
+func on(t *testing.T, names ...string) features.Set {
+	t.Helper()
+	set, err := features.Resolve(names)
+	if err != nil {
+		t.Fatalf("features %v: %v", names, err)
+	}
+	return set
+}
+
 func serve(t *testing.T, b Backend, lines ...string) []map[string]any {
 	t.Helper()
+	return serveWith(t, b, features.Set{}, lines...)
+}
+
+func serveWith(t *testing.T, b Backend, set features.Set, lines ...string) []map[string]any {
+	t.Helper()
 	var out bytes.Buffer
-	if err := New(b).Serve(context.Background(), strings.NewReader(strings.Join(lines, "\n")+"\n"), &out); err != nil {
+	if err := New(b, set).Serve(context.Background(), strings.NewReader(strings.Join(lines, "\n")+"\n"), &out); err != nil {
 		t.Fatalf("serve: %v", err)
 	}
 	var resps []map[string]any
@@ -119,7 +136,7 @@ func TestNotificationsGetNoReply(t *testing.T) {
 
 func TestToolsListCoversEveryTool(t *testing.T) {
 	b, _ := seeded()
-	resps := serve(t, b, `{"jsonrpc":"2.0","id":2,"method":"tools/list"}`)
+	resps := serveWith(t, b, on(t, "session_search"), `{"jsonrpc":"2.0","id":2,"method":"tools/list"}`)
 	tools := resps[0]["result"].(map[string]any)["tools"].([]any)
 	want := []string{"whats_running", "list_sessions", "get_session", "search_feed", "notify_me", "snxw_ingest"}
 	seen := map[string]bool{}
@@ -209,18 +226,19 @@ func TestSearchFeedMatchesKindOrBody(t *testing.T) {
 		{Seq: 3, Kind: "tool.end", Session: "a", Body: json.RawMessage(`{"tool":"Bash","ok":true}`)},
 	}
 
-	got := toolJSON(t, serve(t, b, call("9", "search_feed", `{"query":"bash"}`))[0])
+	searchOn := on(t, "session_search")
+	got := toolJSON(t, serveWith(t, b, searchOn, call("9", "search_feed", `{"query":"bash"}`))[0])
 	if got["count"].(float64) != 2 || got["scanned"].(float64) != 3 {
 		t.Errorf("query bash: count=%v scanned=%v", got["count"], got["scanned"])
 	}
 
-	att := toolJSON(t, serve(t, b, call("10", "search_feed", `{"query":"permission"}`))[0])
+	att := toolJSON(t, serveWith(t, b, searchOn, call("10", "search_feed", `{"query":"permission"}`))[0])
 	events := att["events"].([]any)
 	if len(events) != 1 || events[0].(map[string]any)["seq"].(float64) != 2 {
 		t.Errorf("query permission: %v", events)
 	}
 
-	empty := serve(t, b, call("11", "search_feed", `{"query":"  "}`))[0]
+	empty := serveWith(t, b, searchOn, call("11", "search_feed", `{"query":"  "}`))[0]
 	if empty["result"].(map[string]any)["isError"] != true {
 		t.Errorf("a blank query must be an error result")
 	}
@@ -262,6 +280,58 @@ func TestSnxwIngestValidatesKind(t *testing.T) {
 	bad := serve(t, b, call("15", "snxw_ingest", `{"kind":"anything"}`))[0]
 	if bad["result"].(map[string]any)["isError"] != true {
 		t.Errorf("an unknown kind must be an error result")
+	}
+}
+
+func TestGatedToolIsHiddenAndRefusedWhenItsFeatureIsOff(t *testing.T) {
+	b, _ := seeded()
+	// off: the tool is not in the catalogue a client sees
+	resps := serve(t, b, `{"jsonrpc":"2.0","id":20,"method":"tools/list"}`)
+	for _, raw := range resps[0]["result"].(map[string]any)["tools"].([]any) {
+		if raw.(map[string]any)["name"] == "search_feed" {
+			t.Fatal("search_feed is listed while session_search is off")
+		}
+	}
+	// off: and it cannot be called anyway, even by a client that remembers it
+	resp := serve(t, b, call("21", "search_feed", `{"query":"x"}`))[0]
+	result := resp["result"].(map[string]any)
+	if result["isError"] != true {
+		t.Fatalf("a gated tool must refuse, got %v", resp)
+	}
+	text := result["content"].([]any)[0].(map[string]any)["text"].(string)
+	if !strings.Contains(text, "snxw features enable session_search") {
+		t.Errorf("the refusal must say how to enable it, got %q", text)
+	}
+}
+
+func TestGatedToolIsListedWhenItsFeatureIsOn(t *testing.T) {
+	b, _ := seeded()
+	resps := serveWith(t, b, on(t, "session_search"), `{"jsonrpc":"2.0","id":22,"method":"tools/list"}`)
+	found := false
+	for _, raw := range resps[0]["result"].(map[string]any)["tools"].([]any) {
+		if raw.(map[string]any)["name"] == "search_feed" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("search_feed is not listed with session_search on")
+	}
+}
+
+func TestCoreToolsAreNeverGated(t *testing.T) {
+	b, _ := seeded()
+	resps := serve(t, b, `{"jsonrpc":"2.0","id":23,"method":"tools/list"}`)
+	want := map[string]bool{"whats_running": false, "list_sessions": false, "get_session": false, "notify_me": false, "snxw_ingest": false}
+	for _, raw := range resps[0]["result"].(map[string]any)["tools"].([]any) {
+		name := raw.(map[string]any)["name"].(string)
+		if _, ok := want[name]; ok {
+			want[name] = true
+		}
+	}
+	for name, seen := range want {
+		if !seen {
+			t.Errorf("%q is missing with every feature off: observing and asking the human are not autonomy", name)
+		}
 	}
 }
 

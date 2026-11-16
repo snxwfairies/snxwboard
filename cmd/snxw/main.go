@@ -18,7 +18,10 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/snxwfairies/snxwboard/internal/autopilot"
 	"github.com/snxwfairies/snxwboard/internal/config"
+	"github.com/snxwfairies/snxwboard/internal/features"
+	"github.com/snxwfairies/snxwboard/internal/mcpboard"
 	"github.com/snxwfairies/snxwboard/internal/server"
 	"github.com/snxwfairies/snxwboard/internal/store"
 )
@@ -46,6 +49,8 @@ usage:
   snxw token               print the auth token
   snxw emit <kind> [json]  post an event to the daemon
   snxw mcp                 serve the board to an MCP client over stdio
+  snxw features [enable|disable NAME...]
+                           list the autonomous features (all off) or flip one
   snxw connect claude [--project DIR]
                            add snxw hooks to Claude Code settings
   snxw disconnect claude [--project DIR]
@@ -72,6 +77,8 @@ func run(args []string) error {
 		return runStatus()
 	case "mcp":
 		return runMCP()
+	case "features":
+		return runFeatures(args[1:])
 	case "emit":
 		return runEmit(args[1:])
 	case "open":
@@ -118,7 +125,40 @@ func runUp() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	logger.Info("snxw starting", "version", version, "dir", cfg.Dir, "addr", cfg.Addr)
+	// Everything autonomous is opt-in, and a bad opt-in is fatal rather than
+	// silently ignored: a daemon that quietly runs with half its config is worse
+	// than one that refuses to start.
+	set, err := features.Resolve(cfg.Features)
+	if err != nil {
+		return err
+	}
+	if set.Empty() {
+		logger.Info("snxw starting", "version", version, "dir", cfg.Dir, "addr", cfg.Addr,
+			"features", "none (every autonomous feature is off)")
+	} else {
+		logger.Info("snxw starting", "version", version, "dir", cfg.Dir, "addr", cfg.Addr,
+			"features", strings.Join(set.Names(), ","))
+	}
+
+	if set.Enabled("autopilot") {
+		backend := boardForAutopilot{mcpboard.NewHTTPBackend(cfg.Addr, cfg.Token)}
+		go func() {
+			// The loop reads the daemon over loopback, so give the listener a
+			// moment to come up before the first read.
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(3 * time.Second):
+			}
+			if err := autopilot.Run(ctx, backend, logger, autopilot.Options{
+				Deadline: autopilotDeadline(),
+				Interval: 30 * time.Second,
+			}); err != nil && ctx.Err() == nil {
+				logger.Warn("autopilot stopped", "err", err)
+			}
+		}()
+	}
+
 	return srv.Serve(ctx, cfg.Addr)
 }
 

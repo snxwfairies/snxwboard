@@ -53,6 +53,29 @@ Tools: `whats_running` (what is in flight, what is blocked on you), `list_sessio
 `search_feed`, `notify_me` (ask the human), and `snxw_ingest` (record your own events). An agent that calls
 `whats_running` before it starts knows which repos another session already has open.
 
+### Autonomy is opt-in, and off
+
+Every autonomous behaviour is in the binary and off. `snxw features` lists them; nothing runs until you name it:
+
+```sh
+snxw features                          # the catalogue, every entry "off"
+snxw features enable session_search     # cross-session search, for MCP search_feed
+snxw features enable autopilot session_search
+snxw features disable autopilot
+```
+
+The shape is borrowed from [Hermes Agent](https://github.com/NousResearch/hermes-agent), whose toolsets are
+opt-in groups behind `enabled: false`: the capability is present and documented, and does nothing until the
+operator asks for it. Two rules make the gate worth having:
+
+- **Unmet needs fail loudly.** `autopilot` needs `session_search`; enabling one alone is an error, never an
+  implicit enable. An unknown name fails too, so a typo cannot quietly leave you with less than you meant.
+- **An off feature is unreachable, not just quiet.** The MCP server hides a gated tool from `tools/list` and
+  refuses it in `tools/call` — with the command that would turn it on.
+
+Features are `read` (observe only), `act` (change folded state and the feed) or `spawn` (start processes or drive
+other software). Entries marked *planned* are declared but have no behaviour wired yet, and cannot be enabled.
+
 ## How it works
 
 Agents push events to the daemon over HTTP. The daemon redacts them, appends them to a SQLite log and folds them
