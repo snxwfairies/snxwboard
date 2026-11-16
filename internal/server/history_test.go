@@ -65,6 +65,14 @@ func TestHistoryValidation(t *testing.T) {
 			t.Errorf("%q: status %d, want 400", q, code)
 		}
 	}
+	// Without a session there is no per-session window to page through, so a
+	// cursor is an error rather than a silently ignored parameter.
+	for _, q := range []string{"?after=1", "?before=1", "?after=1&before=2"} {
+		var out map[string]any
+		if code := getJSON(t, s.Handler(), "/v1/events"+q, &out); code != http.StatusBadRequest {
+			t.Errorf("%q: status %d, want 400", q, code)
+		}
+	}
 	req := httptest.NewRequest(http.MethodGet, "/v1/events?session=a", nil)
 	rec := httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)

@@ -4,8 +4,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"io"
 	"strings"
 	"testing"
+	"time"
 )
 
 // fakeBackend serves fixed state and records what the tools wrote.
@@ -117,6 +120,28 @@ func TestNotificationsGetNoReply(t *testing.T) {
 	}
 }
 
+// An idle MCP client must not pin the process: a cancelled context (Ctrl-C,
+// SIGTERM) has to return Serve even though no line has arrived.
+func TestServeReturnsWhenContextCancelled(t *testing.T) {
+	b, _ := seeded()
+	in, write := io.Pipe()
+	defer write.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- New(b).Serve(ctx, in, io.Discard) }()
+	cancel()
+
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("Serve returned %v, want context.Canceled", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Serve stayed blocked on stdin after the context was cancelled")
+	}
+}
+
 func TestToolsListCoversEveryTool(t *testing.T) {
 	b, _ := seeded()
 	resps := serve(t, b, `{"jsonrpc":"2.0","id":2,"method":"tools/list"}`)
@@ -132,6 +157,18 @@ func TestToolsListCoversEveryTool(t *testing.T) {
 		}
 		if _, ok := schema["properties"]; !ok {
 			t.Errorf("%v has no properties", tool["name"])
+		}
+		if tool["name"] == "notify_me" {
+			required, _ := schema["required"].([]any)
+			hasSession := false
+			for _, field := range required {
+				if field == "session" {
+					hasSession = true
+				}
+			}
+			if !hasSession {
+				t.Errorf("notify_me must require session: required = %v", required)
+			}
 		}
 	}
 	for _, name := range want {
@@ -246,6 +283,17 @@ func TestNotifyMeRecordsAttention(t *testing.T) {
 	missing := serve(t, b, call("13", "notify_me", `{}`))[0]
 	if missing["result"].(map[string]any)["isError"] != true {
 		t.Errorf("a missing message must be an error result")
+	}
+
+	// The schema no longer promises a client-named default, so an agent that
+	// omits the session must get a readable tool error instead of an attention
+	// event on an unnamed session.
+	noSession := serve(t, b, call("14", "notify_me", `{"message":"who am i"}`))[0]
+	if noSession["result"].(map[string]any)["isError"] != true {
+		t.Errorf("a missing session must be an error result, got %v", noSession)
+	}
+	if len(b.ingested) != 1 {
+		t.Errorf("a notify_me without a session must not ingest anything, got %+v", b.ingested)
 	}
 }
 

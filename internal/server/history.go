@@ -17,14 +17,19 @@ const (
 // first), at most limit.
 func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	// No session means the whole feed, newest first; see the session-less
-	// branch below (2026-11-16, the MCP search_feed tool).
+	// No session means the whole feed: the newest `limit` events across every
+	// session, returned oldest first (QueryRecent reverses the rows). This is
+	// what the MCP search_feed tool reads (2026-11-16).
 	session := q.Get("session")
 	after, err1 := optInt(q.Get("after"))
 	before, err2 := optInt(q.Get("before"))
 	limit, err3 := optInt(q.Get("limit"))
 	if err1 != nil || err2 != nil || err3 != nil || after < 0 || before < 0 || limit < 0 {
 		writeError(w, http.StatusBadRequest, "after, before and limit must be non-negative integers")
+		return
+	}
+	if session == "" && (after > 0 || before > 0) {
+		writeError(w, http.StatusBadRequest, "after and before require a session")
 		return
 	}
 	if limit == 0 {

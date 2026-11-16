@@ -81,20 +81,57 @@ type Server struct {
 func New(b Backend) *Server { return &Server{backend: b} }
 
 // Serve reads newline-delimited JSON-RPC from in and writes answers to out
-// until in is closed or ctx is cancelled.
+// until in is closed or ctx is cancelled. Reading runs in its own goroutine so
+// that a cancelled context (Ctrl-C, SIGTERM) returns even while the client is
+// idle and no line has arrived.
 func (s *Server) Serve(ctx context.Context, in io.Reader, out io.Writer) error {
 	sc := bufio.NewScanner(in)
 	sc.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
 	w := bufio.NewWriter(out)
 	defer w.Flush()
 
-	for sc.Scan() {
-		line := strings.TrimSpace(sc.Text())
-		if line == "" {
-			continue
+	lines := make(chan string)
+	readErr := make(chan error, 1)
+	stop := make(chan struct{})
+	defer close(stop)
+	go func() {
+		for sc.Scan() {
+			select {
+			case lines <- sc.Text():
+			case <-ctx.Done():
+				return
+			case <-stop:
+				return
+			}
 		}
+		if err := sc.Err(); err != nil {
+			readErr <- err
+		}
+		close(lines)
+	}()
+
+	for {
 		if err := ctx.Err(); err != nil {
 			return err
+		}
+		var line string
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case l, ok := <-lines:
+			if !ok {
+				select {
+				case err := <-readErr:
+					return err
+				default:
+					return nil
+				}
+			}
+			line = l
+		}
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
 		}
 		var req request
 		if err := json.Unmarshal([]byte(line), &req); err != nil {
@@ -113,7 +150,6 @@ func (s *Server) Serve(ctx context.Context, in io.Reader, out io.Writer) error {
 			return err
 		}
 	}
-	return sc.Err()
 }
 
 func (s *Server) write(w *bufio.Writer, v any) error {
@@ -277,8 +313,8 @@ func tools() []tool {
 				"of the board and fires a desktop notification, then returns immediately.",
 			InputSchema: object(map[string]any{
 				"message": str("What you need from the human, in one line."),
-				"session": str("Session to attach it to. Defaults to a session named after this client."),
-			}, "message"),
+				"session": str("Session to attach it to; pass an id from list_sessions."),
+			}, "message", "session"),
 		},
 		{
 			Name:        "snxw_ingest",
@@ -378,8 +414,12 @@ func (s *Server) callTool(ctx context.Context, name string, args json.RawMessage
 		if msg == "" {
 			return "", fmt.Errorf("message is required")
 		}
+		session := strings.TrimSpace(in.Session)
+		if session == "" {
+			return "", fmt.Errorf("session is required: pass an id from list_sessions")
+		}
 		body, _ := json.Marshal(map[string]any{"message": msg, "reason": "agent requested attention"})
-		if err := s.backend.Ingest(ctx, IngestEvent{Kind: "attention", Session: in.Session, Source: "mcp", Body: body}); err != nil {
+		if err := s.backend.Ingest(ctx, IngestEvent{Kind: "attention", Session: session, Source: "mcp", Body: body}); err != nil {
 			return "", err
 		}
 		return jsonText(map[string]any{"notified": true, "message": msg})
