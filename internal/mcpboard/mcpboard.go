@@ -264,6 +264,11 @@ type tool struct {
 }
 
 func object(props map[string]any, required ...string) map[string]any {
+	// A nil map encodes as "properties": null, which clients that validate the
+	// schema (Claude Code among them) reject, dropping every tool.
+	if props == nil {
+		props = map[string]any{}
+	}
 	schema := map[string]any{"type": "object", "properties": props, "additionalProperties": false}
 	if len(required) > 0 {
 		schema["required"] = required
