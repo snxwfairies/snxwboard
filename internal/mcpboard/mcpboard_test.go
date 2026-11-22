@@ -155,8 +155,8 @@ func TestToolsListCoversEveryTool(t *testing.T) {
 		if !ok || schema["type"] != "object" {
 			t.Errorf("%v has no object inputSchema", tool["name"])
 		}
-		if _, ok := schema["properties"]; !ok {
-			t.Errorf("%v has no properties", tool["name"])
+		if _, ok := schema["properties"].(map[string]any); !ok {
+			t.Errorf("%v: properties must be an object, got %#v", tool["name"], schema["properties"])
 		}
 		if tool["name"] == "notify_me" {
 			required, _ := schema["required"].([]any)
